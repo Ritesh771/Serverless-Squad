@@ -1,12 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth, UserRole } from '@/context/AuthContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ComponentType } from 'react';
 import {
   LayoutDashboard,
   Calendar,
   ListChecks,
   DollarSign,
-  MessageSquare,
   User,
   BookOpen,
   Users,
@@ -31,7 +30,7 @@ import { Separator } from '@/components/ui/separator';
 interface NavItem {
   title: string;
   href: string;
-  icon: any;
+  icon: ComponentType<{ className?: string }>;
 }
 
 const roleNavigation: Record<UserRole, NavItem[]> = {
@@ -39,7 +38,6 @@ const roleNavigation: Record<UserRole, NavItem[]> = {
     { title: 'Dashboard', href: '/customer/dashboard', icon: LayoutDashboard },
     { title: 'Book Service', href: '/customer/book-service', icon: BookOpen },
     { title: 'My Bookings', href: '/customer/my-bookings', icon: ListChecks },
-    { title: 'Chat Support', href: '/customer/chat', icon: MessageSquare },
     { title: 'Profile', href: '/customer/profile', icon: User },
   ],
   vendor: [
@@ -47,7 +45,6 @@ const roleNavigation: Record<UserRole, NavItem[]> = {
     { title: 'Calendar', href: '/vendor/calendar', icon: Calendar },
     { title: 'Job List', href: '/vendor/job-list', icon: ListChecks },
     { title: 'Earnings', href: '/vendor/earnings', icon: DollarSign },
-    { title: 'Chat', href: '/vendor/chat', icon: MessageSquare },
     { title: 'Profile', href: '/vendor/profile', icon: User },
   ],
   onboard: [
@@ -61,7 +58,6 @@ const roleNavigation: Record<UserRole, NavItem[]> = {
     { title: 'Signature Vault', href: '/ops/signature-vault', icon: FileSignature },
     { title: 'Manual Payments', href: '/ops/manual-payments', icon: DollarSign },
     { title: 'Analytics', href: '/ops/analytics', icon: TrendingUp },
-    { title: 'Chat', href: '/ops/chat', icon: MessageSquare },
   ],
   admin: [
     { title: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
