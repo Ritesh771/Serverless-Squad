@@ -1,6 +1,9 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Service, Booking, Photo, Signature, Payment, AuditLog
+from .models import (
+    User, Service, Booking, Photo, Signature, Payment, AuditLog,
+    VendorAvailability, TravelTimeCache
+)
 
 
 @admin.register(User)
@@ -29,11 +32,35 @@ class ServiceAdmin(admin.ModelAdmin):
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ['id', 'customer', 'vendor', 'service', 'status', 'total_price', 'scheduled_date']
+    list_display = ['id', 'customer', 'vendor', 'service', 'status', 'total_price', 'scheduled_date', 'travel_time_to_location_minutes']
     list_filter = ['status', 'scheduled_date', 'created_at']
     search_fields = ['customer__username', 'vendor__username', 'service__name', 'pincode']
     ordering = ['-created_at']
-    readonly_fields = ['id', 'created_at', 'updated_at']
+    readonly_fields = ['id', 'created_at', 'updated_at', 'actual_start_time', 'actual_end_time']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('customer', 'vendor', 'service', 'status', 'total_price', 'pincode')
+        }),
+        ('Scheduling', {
+            'fields': ('scheduled_date', 'completion_date', 'actual_start_time', 'actual_end_time')
+        }),
+        ('Smart Buffering', {
+            'fields': (
+                'estimated_service_duration_minutes', 
+                'travel_time_to_location_minutes', 
+                'travel_time_from_location_minutes',
+                'buffer_before_minutes', 
+                'buffer_after_minutes'
+            )
+        }),
+        ('Notes', {
+            'fields': ('customer_notes', 'vendor_notes')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at')
+        })
+    )
 
 
 @admin.register(Photo)
@@ -61,6 +88,27 @@ class PaymentAdmin(admin.ModelAdmin):
     search_fields = ['booking__id', 'stripe_payment_intent_id']
     ordering = ['-created_at']
     readonly_fields = ['id', 'created_at', 'updated_at']
+
+
+@admin.register(VendorAvailability)
+class VendorAvailabilityAdmin(admin.ModelAdmin):
+    list_display = ['vendor', 'day_of_week', 'start_time', 'end_time', 'primary_pincode', 'service_radius_km', 'is_active']
+    list_filter = ['day_of_week', 'is_active', 'service_radius_km']
+    search_fields = ['vendor__username', 'primary_pincode']
+    ordering = ['vendor', 'day_of_week', 'start_time']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(TravelTimeCache)
+class TravelTimeCacheAdmin(admin.ModelAdmin):
+    list_display = ['from_pincode', 'to_pincode', 'duration_minutes', 'distance_km', 'confidence_score', 'calculated_at', 'is_expired']
+    list_filter = ['google_maps_api_used', 'is_expired', 'calculated_at']
+    search_fields = ['from_pincode', 'to_pincode']
+    ordering = ['-calculated_at']
+    readonly_fields = ['calculated_at']
+    
+    def has_add_permission(self, request):
+        return False  # Cache is auto-populated
 
 
 @admin.register(AuditLog)

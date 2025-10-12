@@ -1,6 +1,7 @@
 from rest_framework import serializers
+from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Service, Booking, Photo, Signature, Payment, AuditLog
+from .models import User, Service, Booking, Photo, Signature, Payment, AuditLog, VendorAvailability
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -44,11 +45,45 @@ class BookingSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
     vendor_name = serializers.CharField(source='vendor.get_full_name', read_only=True)
     service_name = serializers.CharField(source='service.name', read_only=True)
+    dynamic_price_breakdown = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Booking
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'total_price']
+    
+    def get_dynamic_price_breakdown(self, obj):
+        """Get dynamic pricing breakdown for this booking"""
+        from .dynamic_pricing_service import DynamicPricingService
+        
+        if obj.service and obj.pincode:
+            return DynamicPricingService.calculate_dynamic_price(
+                obj.service, 
+                obj.pincode, 
+                obj.scheduled_date
+            )
+        return None
+    
+    def create(self, validated_data):
+        """Auto-calculate dynamic price on booking creation"""
+        from .dynamic_pricing_service import DynamicPricingService
+        
+        # Calculate dynamic price if not provided
+        if 'total_price' not in validated_data or not validated_data.get('total_price'):
+            service = validated_data.get('service')
+            pincode = validated_data.get('pincode')
+            scheduled_date = validated_data.get('scheduled_date')
+            
+            if service and pincode:
+                pricing_data = DynamicPricingService.calculate_dynamic_price(
+                    service, pincode, scheduled_date
+                )
+                validated_data['total_price'] = pricing_data['final_price']
+            else:
+                # Fallback to base price
+                validated_data['total_price'] = service.base_price if service else 0
+        
+        return super().create(validated_data)
 
 
 class PhotoSerializer(serializers.ModelSerializer):
@@ -76,3 +111,12 @@ class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuditLog
         fields = '__all__'
+
+
+class VendorAvailabilitySerializer(serializers.ModelSerializer):
+    vendor_name = serializers.CharField(source='vendor.get_full_name', read_only=True)
+    
+    class Meta:
+        model = VendorAvailability
+        fields = '__all__'
+        read_only_fields = ['vendor', 'created_at', 'updated_at']
