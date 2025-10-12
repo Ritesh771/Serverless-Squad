@@ -7,7 +7,7 @@ export const Navbar = () => {
   const { user } = useAuth();
 
   return (
-    <header className="h-16 bg-card border-b border-border px-4 md:px-6 flex items-center justify-between">
+    <header className="h-24 bg-card border-b border-border px-4 md:px-6 flex items-center justify-between">
       {/* Search - Hidden on mobile, visible on md+ */}
       <div className="hidden md:flex flex-1 max-w-md">
         <div className="relative w-full">

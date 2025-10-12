@@ -50,6 +50,12 @@ class SignatureService:
             except Exception as e:
                 logger.error(f"Error sending signature notification: {str(e)}")
             
+            # Send WebSocket notification
+            try:
+                SignatureService._send_signature_notification('signature_requested', booking, signature)
+            except Exception as e:
+                logger.error(f"Error sending WebSocket signature notification: {str(e)}")
+            
             logger.info(f"Signature requested for booking {booking.id} by {requested_by.username}")
             return signature
             
@@ -99,6 +105,12 @@ class SignatureService:
             from .payment_service import PaymentService
             PaymentService.process_automatic_payment(signature.booking)
             
+            # Send WebSocket notification
+            try:
+                SignatureService._send_signature_notification('signature_completed', signature.booking, signature)
+            except Exception as e:
+                logger.error(f"Error sending WebSocket signature completion notification: {str(e)}")
+            
             logger.info(f"Booking {signature.booking.id} signed by customer {customer.username}")
             return signature
             
@@ -108,3 +120,62 @@ class SignatureService:
         except Exception as e:
             logger.error(f"Failed to sign booking: {str(e)}")
             return None
+    
+    @staticmethod
+    def _send_signature_notification(event_type, booking, signature):
+        """Send WebSocket notification for signature events"""
+        try:
+            # Import here to avoid circular imports
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            
+            channel_layer = get_channel_layer()
+            
+            # Prepare notification data
+            notification_data = {
+                'event_type': event_type,
+                'booking_id': str(booking.id),
+                'service_name': booking.service.name,
+                'customer_id': str(booking.customer.id),
+                'customer_name': booking.customer.get_full_name(),
+                'vendor_id': str(booking.vendor.id) if booking.vendor else None,
+                'vendor_name': booking.vendor.get_full_name() if booking.vendor else None,
+                'signature_id': str(signature.id),
+                'timestamp': timezone.now().isoformat()
+            }
+            
+            # Notify customer
+            async_to_sync(channel_layer.group_send)(
+                f'chat_{booking.customer.id}',
+                {
+                    'type': 'chat.notification',
+                    'notification_type': event_type,
+                    'data': notification_data
+                }
+            )
+            
+            # Notify vendor if exists
+            if booking.vendor:
+                async_to_sync(channel_layer.group_send)(
+                    f'chat_{booking.vendor.id}',
+                    {
+                        'type': 'chat.notification',
+                        'notification_type': event_type,
+                        'data': notification_data
+                    }
+                )
+            
+            # Notify ops managers
+            async_to_sync(channel_layer.group_send)(
+                'role_ops_manager',
+                {
+                    'type': 'chat.notification',
+                    'notification_type': event_type,
+                    'data': notification_data
+                }
+            )
+            
+            logger.info(f"WebSocket notification sent for {event_type} on booking {booking.id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send WebSocket notification: {str(e)}")

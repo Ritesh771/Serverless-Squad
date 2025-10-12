@@ -7,6 +7,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import datetime, date
+import logging
+
+logger = logging.getLogger(__name__)
+
 from .models import (
     User, Service, Booking, Photo, Signature, Payment, AuditLog,
     VendorAvailability, TravelTimeCache
@@ -153,6 +157,12 @@ class BookingViewSet(viewsets.ModelViewSet):
             resource_id=booking.id, request=request
         )
         
+        # Send WebSocket notification
+        try:
+            self._send_booking_notification('booking_approved', booking)
+        except Exception as e:
+            logger.error(f"Error sending WebSocket notification: {str(e)}")
+        
         return Response({'message': 'Booking accepted successfully'})
     
     @action(detail=True, methods=['post'], permission_classes=[IsVendor])
@@ -187,6 +197,64 @@ class BookingViewSet(viewsets.ModelViewSet):
                 {'error': 'Failed to request signature'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+    
+    def _send_booking_notification(self, event_type, booking):
+        """Send WebSocket notification for booking events"""
+        try:
+            # Import here to avoid circular imports
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            
+            channel_layer = get_channel_layer()
+            
+            # Prepare notification data
+            notification_data = {
+                'event_type': event_type,
+                'booking_id': str(booking.id),
+                'service_name': booking.service.name,
+                'customer_id': str(booking.customer.id),
+                'customer_name': booking.customer.get_full_name(),
+                'vendor_id': str(booking.vendor.id) if booking.vendor else None,
+                'vendor_name': booking.vendor.get_full_name() if booking.vendor else None,
+                'status': booking.status,
+                'timestamp': timezone.now().isoformat()
+            }
+            
+            # Notify customer
+            async_to_sync(channel_layer.group_send)(
+                f'chat_{booking.customer.id}',
+                {
+                    'type': 'chat.notification',
+                    'notification_type': event_type,
+                    'data': notification_data
+                }
+            )
+            
+            # Notify vendor if exists
+            if booking.vendor:
+                async_to_sync(channel_layer.group_send)(
+                    f'chat_{booking.vendor.id}',
+                    {
+                        'type': 'chat.notification',
+                        'notification_type': event_type,
+                        'data': notification_data
+                    }
+                )
+            
+            # Notify ops managers
+            async_to_sync(channel_layer.group_send)(
+                'role_ops_manager',
+                {
+                    'type': 'chat.notification',
+                    'notification_type': event_type,
+                    'data': notification_data
+                }
+            )
+            
+            logger.info(f"WebSocket notification sent for {event_type} on booking {booking.id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send WebSocket notification: {str(e)}")
 
 
 class PhotoViewSet(viewsets.ModelViewSet):
@@ -545,3 +613,431 @@ class DynamicPricingAPIView(APIView):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@csrf_exempt
+def chat_query(request):
+    """Handle chat queries and return AI/workflow responses"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        user_id = data.get('user_id')
+        role = data.get('role')
+        message = data.get('message')
+        
+        if not all([user_id, role, message]):
+            return JsonResponse({'error': 'Missing required fields: user_id, role, message'}, status=400)
+        
+        # Get user object
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        # Process message based on role
+        response = process_chat_message(user, role, message)
+        
+        # Log chat action
+        AuditLogger.log_action(
+            user=user,
+            action='chat_query',
+            resource_type='Chat',
+            resource_id='chat_query',
+            new_values={'message': message, 'response': response}
+        )
+        
+        return JsonResponse({'response': response})
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Error processing chat query: {str(e)}")
+        # Log error action
+        try:
+            AuditLogger.log_action(
+                user=request.user if hasattr(request, 'user') else None,
+                action='chat_query_error',
+                resource_type='Chat',
+                resource_id='chat_query',
+                new_values={'error': str(e)}
+            )
+        except:
+            pass
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+
+@csrf_exempt
+def chat_context(request):
+    """Provide role-specific context for chat suggestions"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        user_id = request.GET.get('user_id')
+        role = request.GET.get('role')
+        
+        if not all([user_id, role]):
+            return JsonResponse({'error': 'Missing required parameters: user_id, role'}, status=400)
+        
+        # Get user object
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        # Get context based on role
+        context = get_role_context(user, role)
+        
+        # Log context request
+        AuditLogger.log_action(
+            user=user,
+            action='chat_context',
+            resource_type='Chat',
+            resource_id='chat_context',
+            new_values={'role': role}
+        )
+        
+        return JsonResponse({'context': context})
+        
+    except Exception as e:
+        logger.error(f"Error getting chat context: {str(e)}")
+        # Log error action
+        try:
+            AuditLogger.log_action(
+                user=request.user if hasattr(request, 'user') else None,
+                action='chat_context_error',
+                resource_type='Chat',
+                resource_id='chat_context',
+                new_values={'error': str(e)}
+            )
+        except:
+            pass
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+
+def process_chat_message(user, role, message):
+    """Process chat message based on user role and return appropriate response"""
+    message_lower = message.lower()
+    
+    # Handle predefined workflow commands
+    if role == 'customer':
+        if 'track' in message_lower and 'booking' in message_lower:
+            return handle_customer_track_bookings(user)
+        elif 'approve' in message_lower and 'signature' in message_lower:
+            return handle_customer_approve_signature(user, message)
+        elif 'booking' in message_lower and 'detail' in message_lower:
+            return handle_customer_booking_details(user, message)
+        elif 'my bookings' in message_lower or 'list bookings' in message_lower:
+            return handle_customer_track_bookings(user)
+    
+    elif role == 'vendor':
+        if 'upload' in message_lower and 'photo' in message_lower:
+            return handle_vendor_upload_photos(user, message)
+        elif 'request' in message_lower and 'signature' in message_lower:
+            return handle_vendor_request_signature(user, message)
+        elif 'calendar' in message_lower or 'schedule' in message_lower:
+            return handle_vendor_calendar(user)
+        elif 'pending' in message_lower and 'job' in message_lower:
+            return handle_vendor_pending_jobs(user)
+        elif 'my jobs' in message_lower or 'list jobs' in message_lower:
+            return handle_vendor_pending_jobs(user)
+    
+    elif role in ['admin', 'onboard_manager', 'ops_manager']:
+        if 'approve' in message_lower and 'vendor' in message_lower:
+            return handle_admin_approve_vendor(user, message)
+        elif 'monitor' in message_lower and 'signature' in message_lower:
+            return handle_admin_monitor_signatures(user)
+        elif 'resolve' in message_lower and 'dispute' in message_lower:
+            return handle_admin_resolve_dispute(user, message)
+        elif 'pending vendors' in message_lower or 'vendor queue' in message_lower:
+            return handle_admin_approve_vendor(user, message)
+        elif 'signature' in message_lower and 'pending' in message_lower:
+            return handle_admin_monitor_signatures(user)
+    
+    # Handle workflow action commands
+    if message == 'track_bookings':
+        if role == 'customer':
+            return handle_customer_track_bookings(user)
+    elif message == 'view_booking_details':
+        if role == 'customer':
+            return handle_customer_booking_details(user, "")
+    elif message == 'upload_photos':
+        if role == 'vendor':
+            return handle_vendor_upload_photos(user, "")
+    elif message == 'request_signature':
+        if role == 'vendor':
+            return handle_vendor_request_signature(user, "")
+    elif message == 'approve_vendor':
+        if role in ['admin', 'onboard_manager']:
+            return handle_admin_approve_vendor(user, "")
+    elif message == 'monitor_signatures':
+        if role in ['admin', 'ops_manager']:
+            return handle_admin_monitor_signatures(user)
+    
+    # Default AI-like response for unrecognized queries
+    return generate_ai_response(message, role)
+
+
+def get_role_context(user, role):
+    """Get role-specific context for chat suggestions"""
+    context = {
+        'role': role,
+        'suggested_actions': [],
+        'recent_activities': []
+    }
+    
+    if role == 'customer':
+        # Get customer's bookings
+        bookings = Booking.objects.filter(customer=user).order_by('-created_at')[:5]
+        context['suggested_actions'] = [
+            'Track my bookings',
+            'Approve signature for completed service',
+            'View booking details'
+        ]
+        context['recent_activities'] = [
+            {
+                'type': 'booking',
+                'id': str(booking.id),
+                'service': booking.service.name,
+                'status': booking.get_status_display(),
+                'date': booking.scheduled_date.isoformat()
+            }
+            for booking in bookings
+        ]
+    
+    elif role == 'vendor':
+        # Get vendor's bookings
+        bookings = Booking.objects.filter(vendor=user).order_by('-created_at')[:5]
+        context['suggested_actions'] = [
+            'Upload photos for service',
+            'Request signature from customer',
+            'View my calendar',
+            'Check pending jobs'
+        ]
+        context['recent_activities'] = [
+            {
+                'type': 'booking',
+                'id': str(booking.id),
+                'service': booking.service.name,
+                'status': booking.get_status_display(),
+                'date': booking.scheduled_date.isoformat()
+            }
+            for booking in bookings
+        ]
+    
+    elif role in ['admin', 'onboard_manager', 'ops_manager']:
+        # Get pending vendors for onboard managers
+        if role == 'onboard_manager':
+            pending_vendors = User.objects.filter(role='vendor', is_verified=False)[:5]
+            context['suggested_actions'] = [
+                'Approve pending vendors',
+                'Review vendor applications',
+                'View vendor queue'
+            ]
+            context['recent_activities'] = [
+                {
+                    'type': 'vendor_application',
+                    'id': str(vendor.id),
+                    'name': vendor.get_full_name(),
+                    'date': vendor.date_joined.isoformat()
+                }
+                for vendor in pending_vendors
+            ]
+        else:
+            # For ops managers and admins
+            pending_signatures = Signature.objects.filter(status='pending')[:5]
+            context['suggested_actions'] = [
+                'Monitor pending signatures',
+                'Resolve customer disputes',
+                'View system analytics'
+            ]
+            context['recent_activities'] = [
+                {
+                    'type': 'signature',
+                    'id': str(signature.id),
+                    'booking_id': str(signature.booking.id),
+                    'customer': signature.booking.customer.get_full_name(),
+                    'date': signature.requested_at.isoformat()
+                }
+                for signature in pending_signatures
+            ]
+    
+    return context
+
+
+# Workflow handlers for each role
+def handle_customer_track_bookings(user):
+    """Handle customer request to track bookings"""
+    bookings = Booking.objects.filter(customer=user).order_by('-created_at')[:5]
+    
+    if not bookings:
+        return "You don't have any bookings yet. Would you like to book a service?"
+    
+    response = "Here are your recent bookings:\n\n"
+    for booking in bookings:
+        response += f"• {booking.service.name} - {booking.get_status_display()}\n"
+        response += f"  Scheduled for: {booking.scheduled_date.strftime('%Y-%m-%d %H:%M')}\n"
+        response += f"  Booking ID: {booking.id}\n\n"
+    
+    return response
+
+
+def handle_customer_approve_signature(user, message):
+    """Handle customer request to approve signature"""
+    # Extract booking ID from message if provided
+    # In a real implementation, this would parse the message to find booking ID
+    return "To approve a signature, please visit the 'My Bookings' page and click on 'Sign' for the completed service. You'll be asked to provide a satisfaction rating (1-5) and any comments."
+
+
+def handle_customer_booking_details(user, message):
+    """Handle customer request for booking details"""
+    # Extract booking ID from message if provided
+    return "To view booking details, please go to the 'My Bookings' page and click on any booking to see its details including service information, scheduled time, and status."
+
+
+def handle_vendor_upload_photos(user, message):
+    """Handle vendor request to upload photos"""
+    return "To upload photos, go to the 'My Jobs' page, select a booking, and use the 'Upload Photos' option. You can upload 'before' and 'after' photos of your work."
+
+
+def handle_vendor_request_signature(user, message):
+    """Handle vendor request to request signature"""
+    # Get completed bookings without signatures
+    bookings = Booking.objects.filter(
+        vendor=user, 
+        status='completed'
+    ).exclude(signature__isnull=False)[:3]
+    
+    if not bookings:
+        return "You don't have any completed bookings that require signatures."
+    
+    response = "You can request signatures for these completed bookings:\n\n"
+    for booking in bookings:
+        response += f"• {booking.service.name} for {booking.customer.get_full_name()}\n"
+        response += f"  Booking ID: {booking.id}\n"
+        response += f"  Completed on: {booking.completion_date.strftime('%Y-%m-%d %H:%M')}\n\n"
+    
+    response += "To request a signature, go to the booking details page and click 'Request Signature'."
+    return response
+
+
+def handle_vendor_calendar(user):
+    """Handle vendor request to view calendar"""
+    return "To view your calendar, go to the 'Calendar' page where you can see all your scheduled bookings and their statuses."
+
+
+def handle_vendor_pending_jobs(user):
+    """Handle vendor request to check pending jobs"""
+    pending_bookings = Booking.objects.filter(
+        vendor=user,
+        status__in=['confirmed', 'in_progress']
+    ).order_by('scheduled_date')
+    
+    if not pending_bookings:
+        return "You don't have any pending jobs at the moment."
+    
+    response = "Your pending jobs:\n\n"
+    for booking in pending_bookings:
+        response += f"• {booking.service.name} for {booking.customer.get_full_name()}\n"
+        response += f"  Status: {booking.get_status_display()}\n"
+        response += f"  Scheduled for: {booking.scheduled_date.strftime('%Y-%m-%d %H:%M')}\n"
+        response += f"  Booking ID: {booking.id}\n\n"
+    
+    return response
+
+
+def handle_admin_approve_vendor(user, message):
+    """Handle admin request to approve vendor"""
+    pending_vendors = User.objects.filter(role='vendor', is_verified=False)[:5]
+    
+    if not pending_vendors:
+        return "There are no pending vendor applications to approve."
+    
+    response = "Pending vendor applications:\n\n"
+    for vendor in pending_vendors:
+        response += f"• {vendor.get_full_name()} ({vendor.username})\n"
+        response += f"  Email: {vendor.email}\n"
+        response += f"  Phone: {vendor.phone}\n"
+        response += f"  Joined: {vendor.date_joined.strftime('%Y-%m-%d')}\n\n"
+    
+    response += "To approve vendors, go to the 'Vendor Queue' page in the admin dashboard."
+    return response
+
+
+def handle_admin_monitor_signatures(user):
+    """Handle admin request to monitor signatures"""
+    pending_signatures = Signature.objects.filter(status='pending')[:5]
+    
+    if not pending_signatures:
+        return "There are no pending signatures at the moment."
+    
+    response = "Pending signatures:\n\n"
+    for signature in pending_signatures:
+        response += f"• Booking: {signature.booking.service.name}\n"
+        response += f"  Customer: {signature.booking.customer.get_full_name()}\n"
+        response += f"  Vendor: {signature.booking.vendor.get_full_name() if signature.booking.vendor else 'N/A'}\n"
+        response += f"  Requested: {signature.requested_at.strftime('%Y-%m-%d %H:%M')}\n"
+        response += f"  Expires: {signature.expires_at.strftime('%Y-%m-%d %H:%M')}\n\n"
+    
+    response += "To manage signatures, go to the 'Signature Vault' page in the operations dashboard."
+    return response
+
+
+def handle_admin_resolve_dispute(user, message):
+    """Handle admin request to resolve dispute"""
+    disputed_bookings = Booking.objects.filter(status='disputed')[:5]
+    
+    if not disputed_bookings:
+        return "There are no disputed bookings at the moment."
+    
+    response = "Disputed bookings:\n\n"
+    for booking in disputed_bookings:
+        response += f"• {booking.service.name}\n"
+        response += f"  Customer: {booking.customer.get_full_name()}\n"
+        response += f"  Vendor: {booking.vendor.get_full_name() if booking.vendor else 'N/A'}\n"
+        response += f"  Disputed on: {booking.updated_at.strftime('%Y-%m-%d %H:%M')}\n"
+        response += f"  Booking ID: {booking.id}\n\n"
+    
+    response += "To resolve disputes, go to the 'Disputes' section in the admin dashboard."
+    return response
+
+
+def generate_ai_response(message, role):
+    """Generate AI-like response for general queries"""
+    # This is a simple rule-based response generator
+    # In a real implementation, this would connect to an AI service
+    
+    responses = {
+        'hello': 'Hello! How can I help you today?',
+        'hi': 'Hi there! What can I assist you with?',
+        'help': 'I can help you with various tasks based on your role. Try asking about your bookings, service completion, or signature approvals.',
+        'thanks': 'You\'re welcome! Is there anything else I can help you with?',
+        'thank you': 'You\'re welcome! Let me know if you need any further assistance.'
+    }
+    
+    message_lower = message.lower()
+    for key, response in responses.items():
+        if key in message_lower:
+            return response
+    
+    # Default response
+    role_prompts = {
+        'customer': 'As a customer, you can ask me about your bookings, service completion, or signature approvals.',
+        'vendor': 'As a vendor, you can ask me about your jobs, uploading photos, requesting signatures, or viewing your calendar.',
+        'admin': 'As an admin, you can ask me about vendor approvals, monitoring signatures, or resolving disputes.',
+        'onboard_manager': 'As an onboard manager, you can ask me about vendor applications or approval processes.',
+        'ops_manager': 'As an operations manager, you can ask me about monitoring signatures, payments, or system analytics.'
+    }
+    
+    return f"I understand you're asking about '{message}'. {role_prompts.get(role, 'I can help with various tasks in the system.')}"

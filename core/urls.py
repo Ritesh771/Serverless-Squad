@@ -4,7 +4,8 @@ from .views import (
     UserViewSet, ServiceViewSet, BookingViewSet,
     PhotoViewSet, SignatureViewSet, PaymentViewSet, AuditLogViewSet,
     VendorAvailabilityViewSet, SmartSchedulingAPIView,
-    VendorScheduleOptimizationAPIView, TravelTimeAPIView, DynamicPricingAPIView
+    VendorScheduleOptimizationAPIView, TravelTimeAPIView, DynamicPricingAPIView,
+    chat_query, chat_context
 )
 from .auth_views import CustomTokenObtainPairView, send_otp, verify_otp
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -33,6 +34,10 @@ urlpatterns = [
     
     # Dynamic Pricing API
     path('api/dynamic-pricing/', DynamicPricingAPIView.as_view(), name='dynamic-pricing'),
+    
+    # Chatbot APIs
+    path('api/chat/query/', chat_query, name='chat-query'),
+    path('api/chat/context/', chat_context, name='chat-context'),
     
     # API URLs
     path('api/', include(router.urls)),

@@ -46,7 +46,7 @@ export default function BookingDetails() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
+    <div className="w-full x-auto space-y-6 p-4 md:p-6">
       <Button variant="ghost" onClick={() => navigate(-1)}>
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back

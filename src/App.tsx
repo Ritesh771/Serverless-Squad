@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { Sidebar } from "@/components/Sidebar";
 import { Navbar } from "@/components/Navbar";
+import { ChatBot } from "@/components/ChatBot";
 
 // Auth pages
 import Login from "./pages/auth/Login";
@@ -18,7 +19,6 @@ import BookService from "./pages/customer/BookService";
 import MyBookings from "./pages/customer/MyBookings";
 import BookingDetails from "./pages/customer/BookingDetails";
 import SignaturePage from "./pages/customer/SignaturePage";
-import CustomerChat from "./pages/customer/Chat";
 import CustomerProfile from "./pages/customer/Profile";
 
 // Vendor pages
@@ -28,7 +28,6 @@ import VendorJobList from "./pages/vendor/JobList";
 import VendorJobDetails from "./pages/vendor/JobDetails";
 import VendorEarnings from "./pages/vendor/Earnings";
 import VendorTransactionDetails from "./pages/vendor/TransactionDetails";
-import VendorChat from "./pages/vendor/Chat";
 import VendorProfile from "./pages/vendor/Profile";
 
 // Onboard pages
@@ -43,7 +42,6 @@ import BookingsMonitor from "./pages/ops/BookingsMonitor";
 import SignatureVault from "./pages/ops/SignatureVault";
 import ManualPayments from "./pages/ops/ManualPayments";
 import OpsAnalytics from "./pages/ops/Analytics";
-import OpsChat from "./pages/ops/Chat";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -81,6 +79,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto bg-background">
           {children}
         </main>
+        <ChatBot />
       </div>
     </div>
   );
@@ -102,7 +101,6 @@ function AppRoutes() {
       <Route path="/customer/my-bookings" element={<ProtectedLayout><MyBookings /></ProtectedLayout>} />
       <Route path="/customer/my-bookings/:id" element={<ProtectedLayout><BookingDetails /></ProtectedLayout>} />
       <Route path="/customer/signature/:id" element={<ProtectedLayout><SignaturePage /></ProtectedLayout>} />
-      <Route path="/customer/chat" element={<ProtectedLayout><CustomerChat /></ProtectedLayout>} />
       <Route path="/customer/profile" element={<ProtectedLayout><CustomerProfile /></ProtectedLayout>} />
 
       {/* Vendor routes */}
@@ -112,7 +110,6 @@ function AppRoutes() {
       <Route path="/vendor/job-list/:id" element={<ProtectedLayout><VendorJobDetails /></ProtectedLayout>} />
       <Route path="/vendor/earnings" element={<ProtectedLayout><VendorEarnings /></ProtectedLayout>} />
       <Route path="/vendor/earnings/:id" element={<ProtectedLayout><VendorTransactionDetails /></ProtectedLayout>} />
-      <Route path="/vendor/chat" element={<ProtectedLayout><VendorChat /></ProtectedLayout>} />
       <Route path="/vendor/profile" element={<ProtectedLayout><VendorProfile /></ProtectedLayout>} />
 
       {/* Onboard routes */}
@@ -127,7 +124,6 @@ function AppRoutes() {
       <Route path="/ops/signature-vault" element={<ProtectedLayout><SignatureVault /></ProtectedLayout>} />
       <Route path="/ops/manual-payments" element={<ProtectedLayout><ManualPayments /></ProtectedLayout>} />
       <Route path="/ops/analytics" element={<ProtectedLayout><OpsAnalytics /></ProtectedLayout>} />
-      <Route path="/ops/chat" element={<ProtectedLayout><OpsChat /></ProtectedLayout>} />
 
       {/* Admin routes */}
       <Route path="/admin/dashboard" element={<ProtectedLayout><AdminDashboard /></ProtectedLayout>} />
