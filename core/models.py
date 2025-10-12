@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
 from django.core.validators import RegexValidator
+from datetime import timedelta
 import hashlib
 import uuid
 
@@ -77,6 +78,17 @@ class Booking(models.Model):
     scheduled_date = models.DateTimeField()
     completion_date = models.DateTimeField(null=True, blank=True)
     
+    # Smart buffering fields
+    estimated_service_duration_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Predicted service duration")
+    travel_time_to_location_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Travel time to customer location")
+    travel_time_from_location_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Travel time from customer location")
+    buffer_before_minutes = models.PositiveIntegerField(default=15, help_text="Buffer time before service")
+    buffer_after_minutes = models.PositiveIntegerField(default=15, help_text="Buffer time after service")
+    
+    # Calculated times for scheduling
+    actual_start_time = models.DateTimeField(null=True, blank=True, help_text="When vendor should start traveling")
+    actual_end_time = models.DateTimeField(null=True, blank=True, help_text="When vendor is free for next booking")
+    
     customer_notes = models.TextField(blank=True)
     vendor_notes = models.TextField(blank=True)
     
@@ -85,6 +97,36 @@ class Booking(models.Model):
     
     def __str__(self):
         return f"Booking {self.id} - {self.service.name}"
+    
+    def calculate_total_duration_minutes(self):
+        """Calculate total time slot needed including travel and buffers"""
+        duration = self.estimated_service_duration_minutes or self.service.duration_minutes
+        travel_to = self.travel_time_to_location_minutes or 0
+        travel_from = self.travel_time_from_location_minutes or 0
+        buffer_before = self.buffer_before_minutes or 0
+        buffer_after = self.buffer_after_minutes or 0
+        
+        return travel_to + buffer_before + duration + buffer_after + travel_from
+    
+    def update_calculated_times(self):
+        """Update actual start and end times based on travel and service duration"""
+        if self.scheduled_date:
+            # Actual start time = scheduled time - travel time - buffer before
+            travel_time = self.travel_time_to_location_minutes or 0
+            buffer_before = self.buffer_before_minutes or 0
+            start_offset = timedelta(minutes=travel_time + buffer_before)
+            self.actual_start_time = self.scheduled_date - start_offset
+            
+            # Actual end time = scheduled time + service duration + buffer after + travel from
+            service_duration = self.estimated_service_duration_minutes or self.service.duration_minutes
+            buffer_after = self.buffer_after_minutes or 0
+            travel_from = self.travel_time_from_location_minutes or 0
+            end_offset = timedelta(minutes=service_duration + buffer_after + travel_from)
+            self.actual_end_time = self.scheduled_date + end_offset
+    
+    def save(self, *args, **kwargs):
+        self.update_calculated_times()
+        super().save(*args, **kwargs)
 
 
 class Photo(models.Model):
@@ -365,6 +407,81 @@ class BusinessAlert(models.Model):
     
     def __str__(self):
         return f"{self.alert_type} - {self.title} ({self.severity})"
+
+
+class VendorAvailability(models.Model):
+    """Track vendor working hours and availability patterns"""
+    
+    DAY_CHOICES = [
+        ('monday', 'Monday'),
+        ('tuesday', 'Tuesday'),
+        ('wednesday', 'Wednesday'),
+        ('thursday', 'Thursday'),
+        ('friday', 'Friday'),
+        ('saturday', 'Saturday'),
+        ('sunday', 'Sunday'),
+    ]
+    
+    vendor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='availability_slots')
+    day_of_week = models.CharField(max_length=10, choices=DAY_CHOICES)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    
+    # Location preferences
+    primary_pincode = models.CharField(max_length=10, help_text="Vendor's primary location")
+    service_radius_km = models.PositiveIntegerField(default=25, help_text="Maximum travel distance in km")
+    
+    # Buffer preferences
+    preferred_buffer_minutes = models.PositiveIntegerField(default=30, help_text="Preferred gap between bookings")
+    max_travel_time_minutes = models.PositiveIntegerField(default=60, help_text="Maximum acceptable travel time")
+    
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['vendor', 'day_of_week', 'start_time']
+        ordering = ['vendor', 'day_of_week', 'start_time']
+    
+    def __str__(self):
+        return f"{self.vendor.username} - {self.get_day_of_week_display()} {self.start_time}-{self.end_time}"
+
+
+class TravelTimeCache(models.Model):
+    """Cache travel time calculations between pincodes"""
+    
+    from_pincode = models.CharField(max_length=10, db_index=True)
+    to_pincode = models.CharField(max_length=10, db_index=True)
+    
+    # Travel time data
+    distance_km = models.FloatField(help_text="Distance in kilometers")
+    duration_minutes = models.PositiveIntegerField(help_text="Travel time in minutes")
+    duration_in_traffic_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Travel time with traffic")
+    
+    # Metadata
+    calculated_at = models.DateTimeField(auto_now=True)
+    google_maps_api_used = models.BooleanField(default=True)
+    confidence_score = models.FloatField(default=1.0, help_text="Accuracy confidence 0-1")
+    
+    # Cache expiry - data older than 24 hours should be refreshed
+    is_expired = models.BooleanField(default=False)
+    
+    class Meta:
+        unique_together = ['from_pincode', 'to_pincode']
+        ordering = ['-calculated_at']
+        indexes = [
+            models.Index(fields=['from_pincode', 'to_pincode']),
+            models.Index(fields=['calculated_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.from_pincode} → {self.to_pincode}: {self.duration_minutes}min ({self.distance_km}km)"
+    
+    def save(self, *args, **kwargs):
+        # Mark as expired if older than 24 hours
+        if self.calculated_at and (timezone.now() - self.calculated_at).days >= 1:
+            self.is_expired = True
+        super().save(*args, **kwargs)
 
 
 class AuditLog(models.Model):
