@@ -50,7 +50,7 @@ class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at', 'total_price']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'customer']
     
     def get_dynamic_price_breakdown(self, obj):
         """Get dynamic pricing breakdown for this booking"""
