@@ -12,7 +12,6 @@ import {
   TrendingUp,
   Wallet
 } from 'lucide-react';
-import { StripePaymentForm } from '@/components/StripePaymentForm';
 
 interface Payout {
   id: string;
@@ -53,30 +52,12 @@ export const VendorPayoutPanel = () => {
     }
   ]);
 
-  const [showPayoutForm, setShowPayoutForm] = useState(false);
-  const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null);
-
   const totalEarnings = payouts
     .filter(p => p.status === 'completed')
     .reduce((sum, payout) => sum + payout.amount, 0);
 
   const pendingPayouts = payouts.filter(p => p.status === 'pending').length;
   const processingPayouts = payouts.filter(p => p.status === 'processing').length;
-
-  const handleRequestPayout = () => {
-    setShowPayoutForm(true);
-  };
-
-  const handlePayoutSuccess = () => {
-    setShowPayoutForm(false);
-    setSelectedPayout(null);
-    // In a real implementation, you would refresh the payout data from the backend
-  };
-
-  const handleCancelPayout = () => {
-    setShowPayoutForm(false);
-    setSelectedPayout(null);
-  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -97,29 +78,12 @@ export const VendorPayoutPanel = () => {
     return new Date(dateString).toLocaleDateString();
   };
 
-  if (showPayoutForm) {
-    return (
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-          <h3 className="text-lg font-semibold">Request Payout</h3>
-          <Button variant="ghost" onClick={handleCancelPayout}>Cancel</Button>
-        </div>
-        <StripePaymentForm 
-          bookingId="payout-request"
-          amount={10000} // $100.00 example
-          onSuccess={handlePayoutSuccess}
-          onCancel={handleCancelPayout}
-        />
-      </div>
-    );
-  }
-
   return (
     <Card className="card-elevated">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Wallet className="h-5 w-5 text-primary" />
-          Earnings & Payouts
+          Earnings Overview
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -150,24 +114,9 @@ export const VendorPayoutPanel = () => {
           </div>
         </div>
 
-        {/* Payout Request */}
-        <div className="border border-border rounded-lg p-4">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-            <div>
-              <h4 className="font-medium">Ready to Request Payout</h4>
-              <p className="text-sm text-muted-foreground">
-                Transfer your earnings to your bank account
-              </p>
-            </div>
-            <Button onClick={handleRequestPayout} className="w-full sm:w-auto">
-              Request Payout
-            </Button>
-          </div>
-        </div>
-
         {/* Recent Payouts */}
         <div>
-          <h4 className="font-medium mb-3">Recent Payouts</h4>
+          <h4 className="font-medium mb-3">Recent Earnings</h4>
           <div className="space-y-3">
             {payouts.slice(0, 3).map((payout) => (
               <div key={payout.id} className="flex flex-col sm:flex-row sm:justify-between gap-2 p-3 border border-border rounded-lg">
@@ -187,17 +136,17 @@ export const VendorPayoutPanel = () => {
           
           {payouts.length === 0 && (
             <p className="text-center text-muted-foreground py-4">
-              No payout history yet
+              No earnings history yet
             </p>
           )}
         </div>
 
-        {/* Payment Dependency Notice */}
+        {/* Payment Information Notice */}
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <span className="font-medium">Payment Release Policy:</span> Payments are released only after 
-            customer signature confirmation. This ensures service quality and protects both parties.
+            <span className="font-medium">Payment Information:</span> Payments are automatically released after 
+            customer signature confirmation. No action required from vendors.
           </AlertDescription>
         </Alert>
       </CardContent>
