@@ -1,0 +1,4 @@
+Sample Login Credentials:
+Customer: customer1 / password123
+Vendor: vendor1 / password123
+Admin: admin / admin123
