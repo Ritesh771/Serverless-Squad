@@ -274,7 +274,7 @@ export default function VendorDashboard() {
           </Card>
         </div>
 
-        {/* Earnings & Payouts */}
+        {/* Earnings Overview */}
         <VendorPayoutPanel />
       </div>
     </div>

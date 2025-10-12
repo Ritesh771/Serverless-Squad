@@ -17,9 +17,9 @@ interface Booking {
 
 export default function CustomerDashboard() {
   const [recentBookings, setRecentBookings] = useState<Booking[]>([
-    { id: '1', service: 'Plumbing Repair', date: '2025-01-15', status: 'Pending', vendor: 'John Smith' },
-    { id: '2', service: 'AC Maintenance', date: '2025-01-10', status: 'Completed', vendor: 'Sarah Johnson' },
-    { id: '3', service: 'Electrical Inspection', date: '2025-01-08', status: 'Signed', vendor: 'Mike Davis' },
+    { id: '1', service: 'Plumbing Repair', date: '2025-01-15', status: 'completed', vendor: 'John Smith' },
+    { id: '2', service: 'AC Maintenance', date: '2025-01-10', status: 'signed', vendor: 'Sarah Johnson' },
+    { id: '3', service: 'Electrical Inspection', date: '2025-01-08', status: 'pending', vendor: 'Mike Davis' },
   ]);
 
   // WebSocket connection for real-time updates
@@ -28,7 +28,7 @@ export default function CustomerDashboard() {
       // Update booking status in real-time
       setRecentBookings(prev => prev.map(booking => 
         booking.id === data.booking_id 
-          ? { ...booking, status: data.status } 
+          ? { ...booking, status: data.status as string } 
           : booking
       ));
       
@@ -40,7 +40,7 @@ export default function CustomerDashboard() {
       // Update booking status when signature is completed
       setRecentBookings(prev => prev.map(booking => 
         booking.id === data.booking_id 
-          ? { ...booking, status: 'Signed' } 
+          ? { ...booking, status: 'signed' } 
           : booking
       ));
       
@@ -112,22 +112,22 @@ export default function CustomerDashboard() {
                   <div className="text-right">
                     <span
                       className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                        booking.status === 'Completed'
+                        booking.status === 'completed'
                           ? 'bg-success/10 text-success'
-                          : booking.status === 'Pending'
+                          : booking.status === 'pending'
                           ? 'bg-warning/10 text-warning'
-                          : booking.status === 'Signed'
+                          : booking.status === 'signed'
                           ? 'bg-primary/10 text-primary'
                           : 'bg-secondary/10 text-secondary'
                       }`}
                     >
-                      {booking.status === 'Signed' ? (
+                      {booking.status === 'signed' ? (
                         <>
                           <Check className="h-3 w-3" />
-                          {booking.status}
+                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                         </>
                       ) : (
-                        booking.status
+                        booking.status.charAt(0).toUpperCase() + booking.status.slice(1)
                       )}
                     </span>
                     <p className="text-xs text-muted-foreground mt-1">{booking.date}</p>
@@ -166,7 +166,7 @@ export default function CustomerDashboard() {
               <h3 className="text-sm font-medium mb-2">Pending Signatures</h3>
               <div className="space-y-2">
                 {recentBookings
-                  .filter(booking => booking.status === 'Completed')
+                  .filter(booking => booking.status === 'completed')
                   .map(booking => (
                     <Link 
                       key={booking.id} 
@@ -182,7 +182,7 @@ export default function CustomerDashboard() {
                       </Button>
                     </Link>
                   ))}
-                {recentBookings.filter(booking => booking.status === 'Completed').length === 0 && (
+                {recentBookings.filter(booking => booking.status === 'completed').length === 0 && (
                   <p className="text-xs text-muted-foreground py-2">No pending signatures</p>
                 )}
               </div>
