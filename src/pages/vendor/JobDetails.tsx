@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PhotoUpload } from '@/components/PhotoUpload';
-import { ArrowLeft, Calendar, MapPin, User, Phone } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, User, Phone, FileSignature } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function VendorJobDetails() {
@@ -22,7 +22,6 @@ export default function VendorJobDetails() {
     address: '123 Main St, Apartment 4B',
     pincode: '12345',
     status: 'in-progress',
-    payment: '$80',
     description: 'Leaking kitchen faucet needs repair',
   };
 
@@ -174,13 +173,16 @@ export default function VendorJobDetails() {
         <div className="space-y-4">
           <Card className="card-elevated">
             <CardHeader>
-              <CardTitle>Payment</CardTitle>
+              <CardTitle>Payment Information</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary mb-2">{job.payment}</div>
-              <p className="text-xs text-muted-foreground">
-                Payment released after signature
-              </p>
+              <div className="text-center py-4">
+                <FileSignature className="h-12 w-12 text-primary mx-auto mb-3" />
+                <p className="font-medium mb-1">Payment Process</p>
+                <p className="text-sm text-muted-foreground">
+                  Payment will be automatically released after customer signature confirmation
+                </p>
+              </div>
             </CardContent>
           </Card>
 

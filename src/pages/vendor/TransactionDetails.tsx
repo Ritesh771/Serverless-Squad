@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Calendar, User, FileText, Hash } from 'lucide-react';
+import { ArrowLeft, Calendar, User, FileText, Hash, FileSignature } from 'lucide-react';
 
 export default function TransactionDetails() {
   const { id } = useParams();
@@ -21,7 +21,7 @@ export default function TransactionDetails() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
       <Button variant="ghost" onClick={() => navigate(-1)}>
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back
@@ -98,6 +98,22 @@ export default function TransactionDetails() {
               </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment Process Information */}
+      <Card className="card-elevated">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileSignature className="h-5 w-5 text-primary" />
+            Payment Process
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">
+            This payment was automatically released after the customer confirmed service completion with a digital signature. 
+            No action was required from the vendor. All payments are processed securely through our payment gateway.
+          </p>
         </CardContent>
       </Card>
 

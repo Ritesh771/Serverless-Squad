@@ -5,7 +5,8 @@ import { PhotoReview } from '@/components/PhotoReview';
 import { DisputeForm } from '@/components/DisputeForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ArrowLeft, AlertTriangle, AlertCircle, CheckCircle, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/services/api';
 import { ENDPOINTS } from '@/services/endpoints';
@@ -76,11 +77,14 @@ export default function SignaturePage() {
         comments: 'Service completed to satisfaction'
       });
       
-      toast.success('Signature saved successfully!');
+      toast.success('Signature saved successfully! Payment will be processed automatically.', {
+        duration: 5000
+      });
       
+      // Show success message and redirect after a delay
       setTimeout(() => {
         navigate(`/customer/my-bookings/${id}`);
-      }, 1500);
+      }, 2000);
     } catch (error) {
       toast.error('Failed to save signature');
     }
@@ -191,6 +195,15 @@ export default function SignaturePage() {
             </CardContent>
           </Card>
 
+          {/* Payment Information */}
+          <Alert className="border-primary/20">
+            <CreditCard className="h-4 w-4" />
+            <AlertDescription>
+              <span className="font-medium">Payment Information:</span> Your payment of ${booking?.total_price?.toFixed(2) || '0.00'} 
+              will be processed automatically after you sign to confirm job completion.
+            </AlertDescription>
+          </Alert>
+
           <div className="flex gap-3">
             <Button 
               variant="destructive" 
@@ -208,7 +221,7 @@ export default function SignaturePage() {
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground">
                 By signing, you confirm that the service has been completed to your satisfaction
-                and authorize payment processing. Your signature will be encrypted and stored
+                and authorize automatic payment processing. Your signature will be encrypted and stored
                 securely with blockchain verification.
               </p>
               {!photosViewed && booking?.photos && booking.photos.length > 0 && (

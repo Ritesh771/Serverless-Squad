@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, TrendingUp, Calendar, ArrowUpRight, Loader2 } from 'lucide-react';
+import { DollarSign, TrendingUp, Calendar, ArrowUpRight, Loader2, FileSignature } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '@/services/api';
 import { toast } from 'sonner';
@@ -160,6 +160,22 @@ export default function VendorEarnings() {
           trend={{ value: 8, isPositive: true }}
         />
       </div>
+
+      {/* Payment Information Notice */}
+      <Card className="card-elevated">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileSignature className="h-5 w-5 text-primary" />
+            Payment Process
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">
+            Payments are automatically released after customer signature confirmation. 
+            No action required from vendors. All earnings are processed through our secure payment system.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Transactions */}
       <Card className="card-elevated">

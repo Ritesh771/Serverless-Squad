@@ -7,10 +7,10 @@ import { Search, Calendar, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const mockBookings = [
-  { id: '1', service: 'Plumbing Repair', vendor: 'John Smith', date: '2025-01-15', address: '123 Main St', status: 'Pending', price: '$80' },
-  { id: '2', service: 'AC Maintenance', vendor: 'Sarah Johnson', date: '2025-01-10', address: '456 Oak Ave', status: 'Completed', price: '$120' },
-  { id: '3', service: 'Electrical Inspection', vendor: 'Mike Davis', date: '2025-01-08', address: '789 Pine Rd', status: 'Signed', price: '$100' },
-  { id: '4', service: 'Carpentry Work', vendor: 'Emma Wilson', date: '2025-01-05', address: '321 Elm St', status: 'Completed', price: '$150' },
+  { id: '1', service: 'Plumbing Repair', vendor: 'John Smith', date: '2025-01-15', address: '123 Main St', status: 'completed', price: 80 },
+  { id: '2', service: 'AC Maintenance', vendor: 'Sarah Johnson', date: '2025-01-10', address: '456 Oak Ave', status: 'signed', price: 120 },
+  { id: '3', service: 'Electrical Inspection', vendor: 'Mike Davis', date: '2025-01-08', address: '789 Pine Rd', status: 'completed', price: 100 },
+  { id: '4', service: 'Carpentry Work', vendor: 'Emma Wilson', date: '2025-01-05', address: '321 Elm St', status: 'pending', price: 150 },
 ];
 
 export default function MyBookings() {
@@ -84,16 +84,16 @@ export default function MyBookings() {
                       <div className="flex items-center gap-3">
                         <span
                           className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                            booking.status === 'Completed'
+                            booking.status === 'completed'
                               ? 'bg-success/10 text-success'
-                              : booking.status === 'Pending'
+                              : booking.status === 'pending'
                               ? 'bg-warning/10 text-warning'
                               : 'bg-primary/10 text-primary'
                           }`}
                         >
-                          {booking.status}
+                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                         </span>
-                        <span className="text-sm font-semibold text-primary">{booking.price}</span>
+                        <span className="text-sm font-semibold text-primary">${booking.price}</span>
                       </div>
                     </div>
 
