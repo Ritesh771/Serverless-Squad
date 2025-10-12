@@ -49,7 +49,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 def send_otp(request):
     """Send OTP to phone number or email"""
     identifier = request.data.get('phone') or request.data.get('email')
-    method = request.data.get('method', getattr(settings, 'OTP_METHOD', 'email'))  # 'sms' or 'email'
+    method = request.data.get('method', getattr(settings, 'OTP_METHOD', 'email'))  # Default to email
     
     if not identifier:
         return Response({'error': 'Phone number or email is required'}, 
@@ -177,7 +177,7 @@ def verify_otp(request):
 def send_vendor_otp(request):
     """Send OTP to vendor phone number or email"""
     identifier = request.data.get('phone') or request.data.get('email')
-    method = request.data.get('method', getattr(settings, 'OTP_METHOD', 'sms'))  # 'sms' or 'email'
+    method = request.data.get('method', getattr(settings, 'OTP_METHOD', 'email'))  # Default to email
     
     if not identifier:
         return Response({'error': 'Phone number or email is required'}, 

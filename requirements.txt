@@ -45,7 +45,6 @@ requests-oauthlib==2.0.0
 six==1.17.0
 sqlparse==0.5.3
 stripe==13.0.1
-twilio==9.8.3
 typing_extensions==4.15.0
 tzdata==2025.2
 urllib3==2.5.0

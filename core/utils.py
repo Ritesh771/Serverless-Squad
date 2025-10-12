@@ -18,7 +18,7 @@ class OTPService:
     
     @staticmethod
     def send_otp_sms(phone_number, otp):
-        """Send OTP via SMS using Twilio"""
+        """Send OTP via SMS - Now disabled, use email instead"""
         return NotificationService.send_otp_sms(phone_number, otp)
     
     @staticmethod
@@ -37,8 +37,8 @@ class OTPService:
         return NotificationService.verify_otp(identifier, otp)
     
     @staticmethod
-    def send_and_store_otp(identifier, method='sms', user_name=""):
-        """Generate, send, and store OTP"""
+    def send_and_store_otp(identifier, method='email', user_name=""):
+        """Generate, send, and store OTP - now defaults to email"""
         return NotificationService.send_and_store_otp(identifier, method, user_name)
 
 

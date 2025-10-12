@@ -8,8 +8,6 @@ from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.utils import timezone
 from django.db.models import Count, Avg, Sum, Q
-from twilio.rest import Client
-from twilio.base.exceptions import TwilioException
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -103,33 +101,9 @@ class NotificationService:
     
     @staticmethod
     def send_otp_sms(phone_number, otp):
-        """Send OTP via SMS using Twilio"""
-        try:
-            account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
-            auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
-            from_number = getattr(settings, 'TWILIO_PHONE_NUMBER', '')
-            
-            if not all([account_sid, auth_token, from_number]):
-                logger.warning(f"Twilio credentials not configured. OTP for {phone_number}: {otp}")
-                return False
-            
-            client = Client(account_sid, auth_token)
-            
-            message = client.messages.create(
-                body=f'Your HomeServe Pro verification code is: {otp}. Valid for {getattr(settings, "OTP_EXPIRY_MINUTES", 5)} minutes. Do not share this code.',
-                from_=from_number,
-                to=phone_number
-            )
-            
-            logger.info(f"OTP SMS sent successfully to {phone_number}. Message SID: {message.sid}")
-            return True
-            
-        except TwilioException as e:
-            logger.error(f"Twilio error sending OTP to {phone_number}: {str(e)}")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to send OTP SMS to {phone_number}: {str(e)}")
-            return False
+        """Send OTP via SMS - Now redirects to email notification"""
+        logger.warning(f"SMS service disabled. Please use email OTP instead for: {phone_number}")
+        return False
     
     @staticmethod
     def store_otp(identifier, otp, ttl=None):
@@ -166,7 +140,7 @@ class NotificationService:
             user_name: optional user name for personalization
         """
         if method is None:
-            method = getattr(settings, 'OTP_METHOD', 'email')
+            method = getattr(settings, 'OTP_METHOD', 'email')  # Default to email instead of SMS
         
         otp = NotificationService.generate_otp()
         

@@ -52,56 +52,32 @@ def test_email_configuration():
         print("3. Use the App Password (not your regular Gmail password)")
         print("4. Make sure 'Less secure app access' is enabled if not using App Password")
 
-def test_twilio_configuration():
-    """Test Twilio configuration"""
-    print("\n📱 Testing Twilio Configuration")
+def test_removed_twilio_configuration():
+    """Information about removed Twilio configuration"""
+    print("\n📱 Twilio SMS Configuration - REMOVED")
     print("=" * 40)
     
-    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
-    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
-    from_number = getattr(settings, 'TWILIO_PHONE_NUMBER', '')
-    
-    print(f"🆔 Account SID: {account_sid[:20]}..." if account_sid else "❌ Account SID not set")
-    print(f"🔑 Auth Token: {'Set' if auth_token else 'Not set'}")
-    print(f"📞 From Number: {from_number}")
-    
-    if account_sid == 'your_twilio_account_sid' or not account_sid:
-        print("\n⚠️  Twilio credentials are not configured")
-        print("🔧 To configure Twilio:")
-        print("1. Sign up at https://www.twilio.com/")
-        print("2. Get your Account SID and Auth Token from console")
-        print("3. Purchase a phone number")
-        print("4. Update your .env file with real credentials")
-        return
-    
-    # Test Twilio connection
-    try:
-        from twilio.rest import Client
-        client = Client(account_sid, auth_token)
-        
-        # Get account info
-        account = client.api.accounts(account_sid).fetch()
-        print(f"✅ Twilio connection successful!")
-        print(f"📊 Account Status: {account.status}")
-        
-        # Note: We don't send test SMS to avoid charges
-        print("📝 SMS functionality ready (test SMS not sent to avoid charges)")
-        
-    except Exception as e:
-        print(f"❌ Twilio configuration error: {str(e)}")
-        print("\n🔧 Check your Twilio credentials and try again")
+    print("📋 NOTICE: Twilio SMS functionality has been removed from the system.")
+    print("✅ All OTP notifications now use email only.")
+    print("📧 This provides a more cost-effective and reliable solution.")
+    print("\n🔧 Email configuration is now the primary notification method.")
+    print("✨ Benefits of email-only OTP:")
+    print("   • No SMS costs")
+    print("   • Better deliverability")
+    print("   • Rich HTML formatting")
+    print("   • No international restrictions")
 
 def main():
-    print("🔔 HomeServe Pro - Communication Configuration Test")
+    print("🔔 HomeServe Pro - Email Configuration Test")
     print("=" * 55)
     
     test_email_configuration()
-    test_twilio_configuration()
+    test_removed_twilio_configuration()
     
     print("\n🎯 Next Steps:")
     print("1. ✅ Redis is running")
     print("2. 📧 Configure email credentials if test failed")
-    print("3. 📱 Configure Twilio credentials for SMS")
+    print("3. ✅ Twilio has been removed - email-only OTP system")
     print("4. 🚀 Start Celery worker and beat")
 
 if __name__ == '__main__':
