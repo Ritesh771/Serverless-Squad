@@ -929,6 +929,7 @@ class AuditLog(models.Model):
         ('bonus_approved', 'Bonus Approved'),
         ('vendor_application_submitted', 'Vendor Application Submitted'),
         ('vendor_application_reviewed', 'Vendor Application Reviewed'),
+        ('vendor_application_flagged', 'Vendor Application Flagged by AI'),
         ('document_uploaded', 'Document Uploaded'),
         ('chat_message_sent', 'Chat Message Sent'),
     ]
@@ -980,6 +981,11 @@ class VendorApplication(models.Model):
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     remarks = models.TextField(blank=True, help_text="Reviewer remarks for rejection")
+    
+    # AI Flagging fields
+    ai_flag = models.BooleanField(default=False, help_text="AI detected suspicious application")
+    flag_reason = models.TextField(blank=True, help_text="Reason for AI flag")
+    flagged_at = models.DateTimeField(null=True, blank=True, help_text="When the application was flagged by AI")
     
     # References
     reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_applications')

@@ -139,6 +139,65 @@ export const vendorService = {
   },
 };
 
+// Add new interface for signature logs
+export interface SignatureLog {
+  id: string;
+  booking: {
+    id: string;
+    service: {
+      name: string;
+    };
+  };
+  customer: {
+    get_full_name: string;
+  };
+  status: 'pending' | 'signed' | 'expired' | 'disputed';
+  signature_hash?: string;
+  satisfaction_rating?: number;
+  requested_at: string;
+  signed_at?: string;
+  expires_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  user: string;
+  action: string;
+  timestamp: string;
+  old_values: Record<string, string | number | boolean | null>;
+  new_values: Record<string, string | number | boolean | null>;
+}
+
+export const onboardService = {
+  /**
+   * Get signature logs for a vendor application
+   * @param applicationId - The ID of the vendor application
+   * @returns Promise with signature logs
+   */
+  getSignatureLogs: async (applicationId: string): Promise<SignatureLog[]> => {
+    try {
+      const response = await api.get(`/api/onboard/vendors/${applicationId}/signature_logs/`);
+      return response.data.signatures || [];
+    } catch (error) {
+      throw new Error('Failed to fetch signature logs');
+    }
+  },
+
+  /**
+   * Get edit history for a vendor application
+   * @param applicationId - The ID of the vendor application
+   * @returns Promise with edit history
+   */
+  getEditHistory: async (applicationId: string): Promise<AuditLog[]> => {
+    try {
+      const response = await api.get(`/api/onboard/vendors/${applicationId}/edit_history/`);
+      return response.data;
+    } catch (error) {
+      throw new Error('Failed to fetch edit history');
+    }
+  },
+};
+
 export const pricingService = {
   /**
    * Calculate dynamic price for a service

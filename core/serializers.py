@@ -183,7 +183,7 @@ class VendorApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorApplication
         fields = '_all_'
-        read_only_fields = ['id', 'created_at', 'updated_at', 'reviewed_by', 'vendor_account', 'reviewed_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'reviewed_by', 'vendor_account', 'reviewed_at', 'ai_flag', 'flag_reason', 'flagged_at']
     
     def create(self, validated_data):
         # Set default status to pending
@@ -201,7 +201,7 @@ class VendorApplicationListSerializer(serializers.ModelSerializer):
         model = VendorApplication
         fields = [
             'id', 'applicant_name', 'application_type', 'full_name', 'primary_service_category',
-            'status', 'submitted_at', 'reviewed_at', 'documents_count', 'is_complete'
+            'status', 'submitted_at', 'reviewed_at', 'documents_count', 'is_complete', 'ai_flag', 'flag_reason', 'flagged_at'
         ]
 
     def get_documents_count(self, obj):
