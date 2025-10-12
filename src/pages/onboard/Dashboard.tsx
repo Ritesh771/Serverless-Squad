@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, UserCheck, UserX, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Users, UserCheck, UserX, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
@@ -12,20 +12,23 @@ interface VendorApplication {
   service: string;
   date: string;
   status: string;
+  ai_flag?: boolean;
+  flag_reason?: string;
 }
 
 export default function OnboardDashboard() {
   const [recentApplications, setRecentApplications] = useState<VendorApplication[]>([
-    { id: '1', name: 'Mike Johnson', service: 'Plumbing', date: '2025-01-15', status: 'pending' },
+    { id: '1', name: 'Mike Johnson', service: 'Plumbing', date: '2025-01-15', status: 'pending', ai_flag: true, flag_reason: 'Incomplete profile' },
     { id: '2', name: 'Sarah Williams', service: 'Electrical', date: '2025-01-14', status: 'pending' },
-    { id: '3', name: 'Tom Davis', service: 'HVAC', date: '2025-01-13', status: 'under-review' },
+    { id: '3', name: 'Tom Davis', service: 'HVAC', date: '2025-01-13', status: 'under-review', ai_flag: true, flag_reason: 'Multiple applications' },
   ]);
 
   const [stats, setStats] = useState({
     pending: 12,
     underReview: 5,
     approved: 23,
-    rejectionRate: 8
+    rejectionRate: 8,
+    flagged: 2
   });
 
   // WebSocket connection for real-time updates
@@ -102,7 +105,7 @@ export default function OnboardDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <DashboardCard
           title="Pending Applications"
           value={stats.pending.toString()}
@@ -127,6 +130,12 @@ export default function OnboardDashboard() {
           icon={UserX}
           description="Last 30 days"
         />
+        <DashboardCard
+          title="Flagged Applications"
+          value={stats.flagged.toString()}
+          icon={AlertTriangle}
+          description="Require attention"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -144,7 +153,15 @@ export default function OnboardDashboard() {
                   className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted transition-colors"
                 >
                   <div>
-                    <p className="font-medium">{app.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{app.name}</p>
+                      {app.ai_flag && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-warning/10 text-warning">
+                          <AlertTriangle className="h-3 w-3" />
+                          Flagged
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground">{app.service}</p>
                   </div>
                   <div className="text-right">
@@ -193,6 +210,11 @@ export default function OnboardDashboard() {
             <Link to="/onboard/vendor-queue">
               <button className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
                 Review Queue
+              </button>
+            </Link>
+            <Link to="/onboard/vendor-queue?flagged_only=true">
+              <button className="w-full px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors">
+                View Flagged Applications
               </button>
             </Link>
             <Link to="/onboard/approved-vendors">

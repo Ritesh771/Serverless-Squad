@@ -1,8 +1,10 @@
 from django.utils import timezone
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-from .models import VendorApplication, VendorDocument, User
+from .models import VendorApplication, VendorDocument, User, AuditLog
 from .notification_service import NotificationService
+from .vendor_ai_service import vendor_ai_service
+from .utils import AuditLogger
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,28 @@ class VendorOnboardingService:
                 applicant=applicant,
                 **applicant_data
             )
+
+            # Run AI analysis on the application
+            ai_result = vendor_ai_service.analyze_vendor_application(application)
+            
+            if ai_result.get('should_flag', False):
+                application.ai_flag = True
+                application.flag_reason = '; '.join(ai_result.get('flag_reasons', []))
+                application.flagged_at = timezone.now()
+                application.save()
+                
+                # Log the AI flag in audit logs
+                AuditLogger.log_action(
+                    user=None,  # System action
+                    action='vendor_application_flagged',
+                    resource_type='VendorApplication',
+                    resource_id=str(application.id),
+                    new_values={
+                        'ai_flag': True,
+                        'flag_reason': application.flag_reason,
+                        'risk_score': ai_result.get('risk_score', 0)
+                    }
+                )
 
             logger.info(f"Vendor application created for user {applicant.username}")
             return {

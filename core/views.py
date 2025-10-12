@@ -1457,11 +1457,20 @@ class VendorApplicationViewSet(viewsets.ModelViewSet):
     """ViewSet for vendor application management"""
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status', 'ai_flag']
 
     def get_queryset(self):
         user = self.request.user
         if user.role in ['onboard_manager', 'super_admin']:
-            return VendorApplication.objects.all()
+            queryset = VendorApplication.objects.all()
+            
+            # Filter by flagged applications if requested
+            flagged_only = self.request.query_params.get('flagged_only', False)
+            if flagged_only:
+                queryset = queryset.filter(ai_flag=True)
+                
+            return queryset
         elif user.role == 'vendor':
             return VendorApplication.objects.filter(vendor=user)
         return VendorApplication.objects.none()
@@ -1475,6 +1484,44 @@ class VendorApplicationViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(vendor=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        """Override update to implement edit-only mode with audit logging"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        
+        # Store old values for audit logging
+        old_values = {}
+        for field in request.data.keys():
+            if hasattr(instance, field):
+                old_values[field] = getattr(instance, field)
+        
+        # Perform the update
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        # Log the edit in audit logs
+        new_values = {}
+        for field in request.data.keys():
+            if hasattr(instance, field):
+                new_values[field] = getattr(instance, field)
+        
+        from .utils import AuditLogger
+        AuditLogger.log_action(
+            user=request.user,
+            action='update',
+            resource_type='VendorApplication',
+            resource_id=str(instance.id),
+            old_values=old_values,
+            new_values=new_values,
+            request=request
+        )
+        
+        return Response(serializer.data)
+
+    def perform_update(self, serializer):
+        serializer.save()
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVendor])
     def submit(self, request, pk=None):
@@ -1553,6 +1600,113 @@ class VendorApplicationViewSet(viewsets.ModelViewSet):
             {'error': result.get('error', 'Upload failed')},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, (IsOnboardManager | IsSuperAdmin)])
+    def flag_application(self, request, pk=None):
+        """Manually flag an application as suspicious"""
+        application = self.get_object()
+        flag_reason = request.data.get('flag_reason', '')
+        
+        if not flag_reason:
+            return Response(
+                {'error': 'flag_reason is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Flag the application
+        application.ai_flag = True
+        application.flag_reason = flag_reason
+        application.flagged_at = timezone.now()
+        application.save()
+        
+        # Log the manual flag in audit logs
+        from .utils import AuditLogger
+        AuditLogger.log_action(
+            user=request.user,
+            action='vendor_application_flagged',
+            resource_type='VendorApplication',
+            resource_id=str(application.id),
+            new_values={
+                'ai_flag': True,
+                'flag_reason': flag_reason,
+                'manually_flagged': True
+            }
+        )
+        
+        serializer = self.get_serializer(application)
+        return Response(serializer.data)
+        
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, (IsOnboardManager | IsSuperAdmin)])
+    def unflag_application(self, request, pk=None):
+        """Remove flag from an application"""
+        application = self.get_object()
+        
+        # Unflag the application
+        application.ai_flag = False
+        application.flag_reason = ''
+        application.flagged_at = None
+        application.save()
+        
+        # Log the unflag action in audit logs
+        from .utils import AuditLogger
+        AuditLogger.log_action(
+            user=request.user,
+            action='vendor_application_flagged',
+            resource_type='VendorApplication',
+            resource_id=str(application.id),
+            new_values={
+                'ai_flag': False,
+                'flag_reason': '',
+                'manually_unflagged': True
+            }
+        )
+        
+        serializer = self.get_serializer(application)
+        return Response(serializer.data)
+        
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, (IsOnboardManager | IsSuperAdmin)])
+    def edit_history(self, request, pk=None):
+        """Get edit history for a vendor application"""
+        from .models import AuditLog
+        
+        # Get audit logs for this application
+        audit_logs = AuditLog.objects.filter(
+            resource_type='VendorApplication',
+            resource_id=pk,
+            action='update'
+        ).order_by('-timestamp')
+        
+        # Serialize the audit logs
+        from .serializers import AuditLogSerializer
+        serializer = AuditLogSerializer(audit_logs, many=True)
+        
+        return Response(serializer.data)
+        
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, (IsOnboardManager | IsSuperAdmin)])
+    def signature_logs(self, request, pk=None):
+        """Get signature logs for a vendor"""
+        from .models import Signature, User
+        
+        try:
+            # Get the vendor user
+            vendor_app = self.get_object()
+            if not vendor_app.vendor_account:
+                return Response({'signatures': []})
+                
+            vendor_user = vendor_app.vendor_account
+            
+            # Get all signatures for this vendor
+            signatures = Signature.objects.filter(
+                booking__vendor=vendor_user
+            ).select_related('booking', 'booking__customer').order_by('-requested_at')
+            
+            # Serialize the signatures
+            from .serializers import SignatureSerializer
+            serializer = SignatureSerializer(signatures, many=True)
+            
+            return Response({'signatures': serializer.data})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class VendorDocumentViewSet(viewsets.ModelViewSet):

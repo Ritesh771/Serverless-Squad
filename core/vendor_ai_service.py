@@ -803,5 +803,80 @@ class VendorPerformanceAI:
             ]
 
 
+    @classmethod
+    def analyze_vendor_application(cls, application):
+        """Analyze vendor application for suspicious patterns"""
+        try:
+            flag_reasons = []
+            risk_score = 0
+
+            # Check for incomplete profile information
+            if not application.name or len(application.name.strip()) < 3:
+                flag_reasons.append("Incomplete or suspicious name")
+                risk_score += 20
+
+            if not application.email or "@" not in application.email:
+                flag_reasons.append("Invalid email format")
+                risk_score += 25
+
+            if not application.phone or len(application.phone.strip()) < 10:
+                flag_reasons.append("Invalid phone number")
+                risk_score += 20
+
+            # Check for unusual registration patterns
+            existing_apps = cls._check_existing_applications(application)
+            if existing_apps > 3:
+                flag_reasons.append(f"Multiple applications from same user ({existing_apps} found)")
+                risk_score += 30
+
+            # Check document consistency (basic check)
+            if not application.id_proof or not application.address_proof or not application.profile_photo:
+                flag_reasons.append("Missing required documents")
+                risk_score += 25
+
+            # Check experience field
+            if application.experience < 0 or application.experience > 50:
+                flag_reasons.append("Unrealistic experience years")
+                risk_score += 15
+
+            # Determine if application should be flagged
+            should_flag = risk_score >= 40
+
+            return {
+                'should_flag': should_flag,
+                'risk_score': risk_score,
+                'flag_reasons': flag_reasons,
+                'confidence': 'high' if risk_score >= 60 else 'medium' if risk_score >= 40 else 'low'
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to analyze vendor application: {str(e)}")
+            return {
+                'should_flag': False,
+                'error': str(e)
+            }
+
+    @classmethod
+    def _check_existing_applications(cls, application):
+        """Check for existing applications from the same user"""
+        try:
+            from .models import VendorApplication
+            # Check by email
+            email_count = VendorApplication.objects.filter(
+                email=application.email,
+                created_at__gte=timezone.now() - timedelta(days=30)
+            ).count()
+
+            # Check by phone
+            phone_count = VendorApplication.objects.filter(
+                phone=application.phone,
+                created_at__gte=timezone.now() - timedelta(days=30)
+            ).count()
+
+            return max(email_count, phone_count)
+        except Exception:
+            return 0
+
+
 # Singleton instance
 vendor_ai_service = VendorPerformanceAI()
