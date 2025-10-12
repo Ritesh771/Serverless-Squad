@@ -76,3 +76,25 @@ class IsOwnerOrAdmin(BasePermission):
             return obj.user == request.user
         
         return False
+
+
+class IsDisputeParty(BasePermission):
+    """Permission class for dispute parties (customer, vendor, mediator, or admin)"""
+    
+    def has_permission(self, request, view):
+        return request.user.is_authenticated
+    
+    def has_object_permission(self, request, view, obj):
+        # Admin users can access all disputes
+        if request.user.role in ['ops_manager', 'super_admin']:
+            return True
+        
+        # Check if user is a party to this dispute
+        if hasattr(obj, 'customer') and obj.customer == request.user:
+            return True
+        if hasattr(obj, 'vendor') and obj.vendor == request.user:
+            return True
+        if hasattr(obj, 'assigned_mediator') and obj.assigned_mediator == request.user:
+            return True
+        
+        return False

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -7,20 +7,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Loader2 } from 'lucide-react';
+import { CalendarIcon, Loader2, MapPin, Star, Clock, Users, TrendingUp, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { vendorService, Vendor, pricingService, PricingSuggestions } from '@/services/vendorService';
+import api from '@/services/api';
+import { ENDPOINTS } from '@/services/endpoints';
 
-const services = [
-  { id: '1', name: 'Plumbing', basePrice: 80 },
-  { id: '2', name: 'Electrical', basePrice: 100 },
-  { id: '3', name: 'HVAC', basePrice: 120 },
-  { id: '4', name: 'Carpentry', basePrice: 90 },
-  { id: '5', name: 'Painting', basePrice: 70 },
-];
+interface Service {
+  id: string;
+  name: string;
+  base_price: number;
+  duration_minutes: number;
+}
 
 export default function BookService() {
+  const [services, setServices] = useState<Service[]>([]);
   const [serviceType, setServiceType] = useState('');
   const [date, setDate] = useState<Date>();
   const [address, setAddress] = useState('');
@@ -29,7 +32,27 @@ export default function BookService() {
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
   const [timeSlot, setTimeSlot] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchingVendors, setSearchingVendors] = useState(false);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [demandIndex, setDemandIndex] = useState<number | null>(null);
+  const [selectedVendor, setSelectedVendor] = useState<string>('');
+  const [pricingSuggestions, setPricingSuggestions] = useState<PricingSuggestions | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const navigate = useNavigate();
+
+  // Load services on component mount
+  useEffect(() => {
+    fetchServices();
+  }, []);
+
+  const fetchServices = async () => {
+    try {
+      const response = await api.get(ENDPOINTS.SERVICE.LIST);
+      setServices(response.data.results || response.data);
+    } catch (error) {
+      toast.error('Failed to load services');
+    }
+  };
 
   const timeSlots = [
     '09:00 AM - 11:00 AM',
@@ -39,29 +62,120 @@ export default function BookService() {
     '05:00 PM - 07:00 PM',
   ];
 
-  const calculatePrice = () => {
-    const service = services.find((s) => s.id === serviceType);
-    if (service && pincode) {
-      // Mock dynamic pricing based on pincode
-      const basePrice = service.basePrice;
-      const pincodeMultiplier = pincode.startsWith('1') ? 1.2 : pincode.startsWith('9') ? 1.15 : 1.0;
-      setEstimatedPrice(Math.round(basePrice * pincodeMultiplier));
+  const searchVendors = async () => {
+    if (!pincode) {
+      toast.error('Please enter a pincode');
+      return;
+    }
+
+    setSearchingVendors(true);
+    try {
+      const serviceId = serviceType ? parseInt(serviceType) : undefined;
+      const result = await vendorService.searchVendors(pincode, serviceId);
+      setVendors(result.vendors);
+      setDemandIndex(result.demand_index);
+      
+      // Show demand alert if high demand
+      if (result.demand_index > 7) {
+        toast.warning(`High demand zone detected! (${result.demand_index}/10) - Prices may be higher`);
+      } else if (result.demand_index > 5) {
+        toast.info(`Moderate demand zone (${result.demand_index}/10)`);
+      }
+    } catch (error) {
+      toast.error('Failed to search vendors in this area');
+    } finally {
+      setSearchingVendors(false);
+    }
+  };
+
+  const calculatePrice = async () => {
+    if (!serviceType || !pincode) {
+      toast.error('Please select a service and enter a pincode');
+      return;
+    }
+
+    try {
+      const service = services.find((s) => s.id === serviceType);
+      if (!service) return;
+
+      const response = await pricingService.calculatePrice(
+        parseInt(serviceType),
+        pincode,
+        date ? date.toISOString() : undefined
+      );
+
+      setEstimatedPrice(response.final_price);
+      
+      // Show price change information
+      if (response.price_change_percent !== 0) {
+        const change = response.price_change_percent;
+        const surgeInfo = response.surge_info;
+        
+        toast.info(
+          `Price ${change > 0 ? 'increased' : 'decreased'} by ${Math.abs(change)}% due to demand`,
+          {
+            description: `Base: $${response.base_price.toFixed(2)} → Final: $${response.final_price.toFixed(2)}`,
+            duration: 5000
+          }
+        );
+        
+        // Show surge information if applicable
+        if (surgeInfo.level > 0) {
+          toast.info(
+            `${surgeInfo.label} Pricing`,
+            {
+              description: surgeInfo.reasons.join(', '),
+              icon: surgeInfo.level > 1 ? <AlertTriangle className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />,
+              duration: 5000
+            }
+          );
+        }
+      }
+      
+      // Get pricing suggestions
+      const suggestions = await pricingService.getPriceSuggestions(parseInt(serviceType), pincode);
+      setPricingSuggestions(suggestions);
+    } catch (error) {
+      toast.error('Failed to calculate dynamic price');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!serviceType || !date || !address || !pincode || !timeSlot) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
     setLoading(true);
 
-    // TODO: Connect to /api/customer/bookings
-    setTimeout(() => {
+    try {
+      const service = services.find((s) => s.id === serviceType);
+      if (!service) {
+        throw new Error('Service not found');
+      }
+
+      const bookingData = {
+        service: parseInt(serviceType),
+        pincode,
+        scheduled_date: date.toISOString(),
+        customer_notes: description,
+        total_price: estimatedPrice || service.base_price,
+      };
+
+      const response = await api.post(ENDPOINTS.CUSTOMER.BOOKINGS, bookingData);
       toast.success('Service booked successfully!');
       navigate('/customer/my-bookings');
-    }, 1500);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to book service';
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 p-4 md:p-6">
+    <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Book a Service</h1>
         <p className="text-muted-foreground mt-1 text-sm md:text-base">Schedule a home service with our verified vendors</p>
@@ -83,7 +197,7 @@ export default function BookService() {
                   <SelectContent>
                     {services.map((service) => (
                       <SelectItem key={service.id} value={service.id}>
-                        {service.name} - ${service.basePrice}/hr
+                        {service.name} - ${service.base_price}/hr
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -120,14 +234,38 @@ export default function BookService() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="pincode">Pincode</Label>
-                <Input
-                  id="pincode"
-                  placeholder="12345"
-                  value={pincode}
-                  onChange={(e) => setPincode(e.target.value)}
-                  onBlur={calculatePrice}
-                  required
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="pincode"
+                    placeholder="123456"
+                    value={pincode}
+                    onChange={(e) => setPincode(e.target.value)}
+                    required
+                  />
+                  <Button 
+                    type="button" 
+                    onClick={searchVendors}
+                    disabled={searchingVendors || !pincode}
+                  >
+                    {searchingVendors ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Search'
+                    )}
+                  </Button>
+                </div>
+                
+                {demandIndex !== null && (
+                  <div className="flex items-center gap-2 text-sm mt-1">
+                    <Users className="h-4 w-4" />
+                    <span>Demand Index: {demandIndex}/10</span>
+                    {demandIndex > 7 && (
+                      <span className="px-2 py-1 bg-destructive/10 text-destructive text-xs rounded">
+                        High Demand
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -147,6 +285,55 @@ export default function BookService() {
               </div>
             </div>
 
+            {vendors.length > 0 && (
+              <Card className="border-primary">
+                <CardHeader>
+                  <CardTitle className="text-lg">Available Vendors ({vendors.length})</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {vendors.map((vendor) => (
+                    <div 
+                      key={vendor.id} 
+                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                        selectedVendor === vendor.id.toString() 
+                          ? 'border-primary bg-primary/5' 
+                          : 'hover:bg-muted'
+                      }`}
+                      onClick={() => setSelectedVendor(vendor.id.toString())}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{vendor.name}</div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                              <span>{vendor.rating}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <MapPin className="h-4 w-4" />
+                              <span>{vendor.distance_km} km</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-4 w-4" />
+                              <span>{vendor.travel_time} min</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-muted-foreground">
+                            {vendor.total_jobs} jobs completed
+                          </div>
+                          {selectedVendor === vendor.id.toString() && (
+                            <div className="text-xs text-primary font-medium">Selected</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="description">Service Description</Label>
               <Textarea
@@ -161,19 +348,68 @@ export default function BookService() {
 
             {serviceType && (
               <div className="p-4 bg-muted rounded-lg">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={calculatePrice}
-                  className="mb-2"
-                >
-                  Calculate Estimated Price
-                </Button>
+                <div className="flex justify-between items-center mb-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={calculatePrice}
+                    className="mb-2"
+                    disabled={!pincode}
+                  >
+                    Calculate Estimated Price
+                  </Button>
+                  {pricingSuggestions && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowSuggestions(!showSuggestions)}
+                    >
+                      {showSuggestions ? 'Hide' : 'Show'} Suggestions
+                    </Button>
+                  )}
+                </div>
+                
                 {estimatedPrice !== null && (
                   <p className="text-2xl font-bold text-primary">
-                    Estimated: ${estimatedPrice}/hour
+                    Estimated: ${estimatedPrice.toFixed(2)}
                   </p>
+                )}
+                
+                {showSuggestions && pricingSuggestions && (
+                  <div className="mt-3 p-3 bg-background border rounded-md">
+                    <h4 className="font-medium mb-2 flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4" />
+                      Pricing Suggestions
+                    </h4>
+                    
+                    {pricingSuggestions.recommendations.length > 0 ? (
+                      <div className="space-y-2">
+                        {pricingSuggestions.recommendations.map((rec, index) => (
+                          <div key={index} className="text-sm p-2 bg-muted rounded">
+                            {rec.message}
+                            {rec.savings > 0 && (
+                              <span className="ml-2 font-medium text-green-600">
+                                Save ₹{rec.savings.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No specific recommendations at this time.</p>
+                    )}
+                    
+                    <div className="mt-2 text-sm">
+                      <p>
+                        Cheapest date: {new Date(pricingSuggestions.cheapest_date).toLocaleDateString()} 
+                        <span className="ml-2 font-medium text-green-600">
+                          Save ₹{pricingSuggestions.savings.toFixed(2)}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
             )}

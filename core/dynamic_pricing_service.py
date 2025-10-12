@@ -125,7 +125,8 @@ class DynamicPricingService:
                         'details': performance_data
                     }
                 },
-                'total_multiplier': float(demand_multiplier * supply_multiplier * time_multiplier * performance_multiplier)
+                'total_multiplier': float(demand_multiplier * supply_multiplier * time_multiplier * performance_multiplier),
+                'surge_info': cls._get_surge_info(demand_data, supply_data, time_factors)
             }
             
             logger.info(f"Dynamic price calculated for {service.name} in {pincode}: ₹{base_price} -> ₹{final_price}")
@@ -141,6 +142,51 @@ class DynamicPricingService:
                 'price_change_percent': 0.0,
                 'error': str(e)
             }
+    
+    @classmethod
+    def _get_surge_info(cls, demand_data, supply_data, time_factors):
+        """Get surge pricing information for customer notifications"""
+        surge_level = 0
+        surge_reasons = []
+        
+        # Check demand surge
+        if demand_data['level'] in ['very_high', 'extreme']:
+            surge_level = max(surge_level, 2)
+            surge_reasons.append("High demand in your area")
+        elif demand_data['level'] in ['high']:
+            surge_level = max(surge_level, 1)
+            surge_reasons.append("Increased demand")
+        
+        # Check supply shortage
+        if supply_data['level'] in ['no_vendors', 'very_low']:
+            surge_level = max(surge_level, 2)
+            surge_reasons.append("Limited vendor availability")
+        elif supply_data['level'] in ['low']:
+            surge_level = max(surge_level, 1)
+            surge_reasons.append("Low vendor count")
+        
+        # Check time-based surge
+        if 'peak_hour' in time_factors:
+            surge_level = max(surge_level, 1)
+            surge_reasons.append("Peak hours")
+        if 'late_night' in time_factors:
+            surge_level = max(surge_level, 2)
+            surge_reasons.append("Late night service")
+        if 'weekend' in time_factors:
+            surge_level = max(surge_level, 1)
+            surge_reasons.append("Weekend service")
+        
+        surge_labels = {
+            0: "Normal",
+            1: "Moderate Surge",
+            2: "High Surge"
+        }
+        
+        return {
+            'level': surge_level,
+            'label': surge_labels.get(surge_level, "Normal"),
+            'reasons': surge_reasons
+        }
     
     @classmethod
     def _get_demand_data(cls, pincode):
@@ -432,10 +478,66 @@ class DynamicPricingService:
                     ('morning', morning_price['final_price']),
                     ('afternoon', afternoon_price['final_price']),
                     ('evening', evening_price['final_price'])
-                ], key=lambda x: x[1])[0]
+                ], key=lambda x: x[1])[0],
+                'surge_info': morning_price.get('surge_info', {})
             })
         
         return predictions
+    
+    @classmethod
+    def get_real_time_suggestions(cls, service, pincode, customer_id=None):
+        """
+        Get real-time pricing suggestions for a customer
+        """
+        try:
+            # Current price
+            current_price = cls.calculate_dynamic_price(service, pincode)
+            
+            # Get predictions for next few days
+            predictions = cls.get_price_prediction(service, pincode, 3)
+            
+            # Find cheapest option
+            cheapest_option = min(predictions, key=lambda x: x['avg_price'])
+            
+            # Find best time to book
+            best_times = {}
+            for pred in predictions:
+                best_times[pred['date']] = pred['best_time']
+            
+            suggestions = {
+                'current_price': current_price,
+                'cheapest_date': cheapest_option['date'],
+                'cheapest_price': cheapest_option['avg_price'],
+                'savings': round(current_price['final_price'] - cheapest_option['avg_price'], 2),
+                'best_times': best_times,
+                'recommendations': []
+            }
+            
+            # Add recommendations based on surge levels
+            if current_price.get('surge_info', {}).get('level', 0) > 1:
+                suggestions['recommendations'].append({
+                    'type': 'timing',
+                    'message': f"Prices are {current_price['surge_info']['label']} right now. Consider booking for {cheapest_option['day_of_week']} to save ₹{suggestions['savings']}",
+                    'savings': suggestions['savings']
+                })
+            
+            # Add vendor availability suggestions
+            supply_data = cls._get_supply_data(pincode)
+            if supply_data['level'] in ['no_vendors', 'very_low']:
+                suggestions['recommendations'].append({
+                    'type': 'availability',
+                    'message': "Limited vendor availability in your area. Book early to secure a slot.",
+                    'savings': 0
+                })
+            
+            return suggestions
+            
+        except Exception as e:
+            logger.error(f"Error generating pricing suggestions: {str(e)}")
+            return {
+                'current_price': cls.calculate_dynamic_price(service, pincode),
+                'recommendations': []
+            }
     
     @classmethod
     def clear_cache(cls, pincode=None):

@@ -7,6 +7,8 @@ export const ENDPOINTS = {
     REGISTER: '/api/auth/register',
     FORGOT_PASSWORD: '/api/auth/forgot-password',
     LOGOUT: '/api/auth/logout',
+    SEND_OTP: '/api/auth/send-otp',
+    VERIFY_OTP: '/api/auth/verify-otp',
   },
 
   // Customer
@@ -15,6 +17,8 @@ export const ENDPOINTS = {
     BOOKING: (id: string) => `/api/customer/bookings/${id}`,
     CREATE_BOOKING: '/api/customer/bookings',
     PROFILE: '/api/customer/profile',
+    ADDRESSES: '/api/addresses',
+    ADDRESS: (id: string) => `/api/addresses/${id}`,
   },
 
   // Vendor
@@ -25,6 +29,7 @@ export const ENDPOINTS = {
     EARNINGS: '/api/vendor/earnings',
     TRANSACTIONS: '/api/vendor/transactions',
     PROFILE: '/api/vendor/profile',
+    SEARCH: '/api/vendor-search',  // Add vendor search endpoint
   },
 
   // Services
@@ -38,6 +43,7 @@ export const ENDPOINTS = {
     VERIFY: '/api/signature/verify',
     CREATE: '/api/signature/create',
     LIST: '/api/signature/list',
+    SIGN: (id: string) => `/api/signatures/${id}/sign/`,
   },
 
   // Onboard
@@ -54,21 +60,23 @@ export const ENDPOINTS = {
     BOOKINGS: '/api/ops/bookings',
     SIGNATURES: '/api/ops/signatures',
     PAYMENTS: '/api/ops/payments',
-    ANALYTICS: '/api/ops/analytics',
+    DISPUTES: '/api/ops/disputes',
   },
 
-  // Admin
-  ADMIN: {
-    USERS: '/api/admin/users',
-    ROLES: '/api/admin/roles',
-    AUDIT_LOGS: '/api/admin/audit-logs',
-    SETTINGS: '/api/admin/settings',
-    REPORTS: '/api/admin/reports',
+  // Dynamic Pricing
+  PRICING: {
+    CALCULATE: '/api/dynamic-pricing/',
+    PREDICT: '/api/dynamic-pricing/',
   },
 
-  // Common
-  NOTIFICATIONS: '/api/notifications',
-  CHAT: '/api/chat',
+  // Smart Scheduling
+  SCHEDULING: {
+    SMART: '/api/smart-scheduling/',
+    OPTIMIZATION: '/api/vendor-optimization/',
+  },
+
+  // Travel Time
+  TRAVEL: {
+    TIME: '/api/travel-time/',
+  },
 };
-
-export default ENDPOINTS;

@@ -28,6 +28,27 @@ class BookingConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error in booking consumer connect: {str(e)}")
             await self.close()
+    
+    async def disconnect(self, close_code):
+        # Leave booking group
+        await self.channel_layer.group_discard(
+            self.booking_group_name,
+            self.channel_name
+        )
+    
+    async def receive(self, text_data):
+        # Handle incoming messages if needed
+        pass
+    
+    async def booking_status_update(self, event):
+        """Send booking status update to WebSocket"""
+        await self.send(text_data=json.dumps({
+            'type': 'status_update',
+            'booking_id': event['booking_id'],
+            'status': event['status'],
+            'timestamp': event['timestamp'],
+            'message': event['message']
+        }))
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):
@@ -48,6 +69,22 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error in notification consumer connect: {str(e)}")
             await self.close()
+    
+    async def disconnect(self, close_code):
+        # Leave user group
+        await self.channel_layer.group_discard(
+            self.user_group_name,
+            self.channel_name
+        )
+    
+    async def user_notification(self, event):
+        """Send notification to user WebSocket"""
+        await self.send(text_data=json.dumps({
+            'type': 'notification',
+            'notification_type': event['notification_type'],
+            'data': event['data'],
+            'timestamp': event['timestamp']
+        }))
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -375,4 +412,115 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'type': 'notification',
             'notification_type': event['notification_type'],
             'data': event['data']
+        }))
+
+
+class LiveStatusConsumer(AsyncWebsocketConsumer):
+    """Dedicated consumer for live booking status tracking"""
+    
+    async def connect(self):
+        try:
+            logger.info(f"LiveStatusConsumer connect called with scope: {self.scope}")
+            self.user_id = self.scope['url_route']['kwargs']['user_id']
+            self.role = self.scope['url_route']['kwargs'].get('role', 'customer')
+            
+            # Join user-specific group for status updates
+            self.user_status_group = f'status_user_{self.user_id}'
+            await self.channel_layer.group_add(
+                self.user_status_group,
+                self.channel_name
+            )
+            
+            # Join role-based group for bulk notifications
+            self.role_status_group = f'status_role_{self.role}'
+            await self.channel_layer.group_add(
+                self.role_status_group,
+                self.channel_name
+            )
+            
+            await self.accept()
+            logger.info(f"LiveStatusConsumer connected for user {self.user_id} with role {self.role}")
+        except Exception as e:
+            logger.error(f"Error in live status consumer connect: {str(e)}")
+            await self.close()
+    
+    async def disconnect(self, close_code):
+        # Leave user group
+        await self.channel_layer.group_discard(
+            self.user_status_group,
+            self.channel_name
+        )
+        
+        # Leave role group
+        await self.channel_layer.group_discard(
+            self.role_status_group,
+            self.channel_name
+        )
+    
+    async def receive(self, text_data):
+        """Handle incoming messages"""
+        try:
+            data = json.loads(text_data)
+            message_type = data.get('type')
+            
+            if message_type == 'subscribe_to_booking':
+                await self.subscribe_to_booking(data.get('booking_id'))
+            elif message_type == 'unsubscribe_from_booking':
+                await self.unsubscribe_from_booking(data.get('booking_id'))
+        except Exception as e:
+            logger.error(f"Error processing message in LiveStatusConsumer: {str(e)}")
+    
+    async def subscribe_to_booking(self, booking_id):
+        """Subscribe to status updates for a specific booking"""
+        if booking_id:
+            booking_group = f'status_booking_{booking_id}'
+            await self.channel_layer.group_add(
+                booking_group,
+                self.channel_name
+            )
+            
+            # Send confirmation
+            await self.send(text_data=json.dumps({
+                'type': 'subscription_confirmed',
+                'booking_id': booking_id,
+                'message': f'Subscribed to status updates for booking {booking_id}'
+            }))
+    
+    async def unsubscribe_from_booking(self, booking_id):
+        """Unsubscribe from status updates for a specific booking"""
+        if booking_id:
+            booking_group = f'status_booking_{booking_id}'
+            await self.channel_layer.group_discard(
+                booking_group,
+                self.channel_name
+            )
+            
+            # Send confirmation
+            await self.send(text_data=json.dumps({
+                'type': 'unsubscription_confirmed',
+                'booking_id': booking_id,
+                'message': f'Unsubscribed from status updates for booking {booking_id}'
+            }))
+    
+    async def booking_status_update(self, event):
+        """Send booking status update to WebSocket"""
+        await self.send(text_data=json.dumps({
+            'type': 'booking_status_update',
+            'booking_id': event['booking_id'],
+            'status': event['status'],
+            'previous_status': event.get('previous_status'),
+            'timestamp': event['timestamp'],
+            'message': event['message'],
+            'eta_minutes': event.get('eta_minutes'),
+            'vendor_location': event.get('vendor_location')
+        }))
+    
+    async def booking_eta_update(self, event):
+        """Send ETA update to WebSocket"""
+        await self.send(text_data=json.dumps({
+            'type': 'booking_eta_update',
+            'booking_id': event['booking_id'],
+            'eta_minutes': event['eta_minutes'],
+            'timestamp': event['timestamp'],
+            'message': event['message']
         }))
