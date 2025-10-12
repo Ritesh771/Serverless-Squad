@@ -267,8 +267,8 @@ def test_schedule_optimization():
         booking.buffer_after_minutes = 15
         booking.save()
         
-        print(f\"   📝 Booking {i+1}: {scheduled_time.strftime('%I:%M %p')} at {booking_data['pincode']}\")
-        print(f\"      🚗 Travel time: {booking.travel_time_to_location_minutes} min\")
+        print(f"   📝 Booking {i+1}: {scheduled_time.strftime('%I:%M %p')} at {booking_data['pincode']}")
+        print(f"      🚗 Travel time: {booking.travel_time_to_location_minutes} min")
     
     print()
     
@@ -276,37 +276,37 @@ def test_schedule_optimization():
     try:
         optimization = scheduling_service.optimize_vendor_schedule(vendor1.id, base_time.date())
         
-        print(f\"📊 Schedule Optimization Results:\")
-        print(f\"   📋 Total bookings: {optimization['total_bookings']}\")
-        print(f\"   ⏰ Total working time: {optimization['total_working_time_minutes']} min\")
-        print(f\"   🚗 Total travel time: {optimization['total_travel_time_minutes']} min\")
-        print(f\"   🔧 Total service time: {optimization['total_service_time_minutes']} min\")
-        print(f\"   🎯 Efficiency score: {optimization['efficiency_score']:.1f}%\")
+        print(f"📊 Schedule Optimization Results:")
+        print(f"   📋 Total bookings: {optimization['total_bookings']}")
+        print(f"   ⏰ Total working time: {optimization['total_working_time_minutes']} min")
+        print(f"   🚗 Total travel time: {optimization['total_travel_time_minutes']} min")
+        print(f"   🔧 Total service time: {optimization['total_service_time_minutes']} min")
+        print(f"   🎯 Efficiency score: {optimization['efficiency_score']:.1f}%")
         print()
         
         if optimization['optimization_suggestions']:
-            print(f\"💡 Optimization Suggestions:\")
+            print(f"💡 Optimization Suggestions:")
             for suggestion in optimization['optimization_suggestions']:
-                print(f\"   {suggestion['severity'].upper()}: {suggestion['suggestion']}\")
+                print(f"   {suggestion['severity'].upper()}: {suggestion['suggestion']}")
         else:
-            print(f\"✅ Schedule is well optimized!\")
+            print(f"✅ Schedule is well optimized!")
             
     except Exception as e:
-        print(f\"❌ Error running optimization: {e}\")
+        print(f"❌ Error running optimization: {e}")
 
 def test_optimal_booking_suggestion():
-    \"\"\"Test optimal booking time suggestion\"\"\"
-    print_header(\"TESTING OPTIMAL BOOKING SUGGESTION\")
+    """Test optimal booking time suggestion"""
+    print_header("TESTING OPTIMAL BOOKING SUGGESTION")
     
     vendor1, vendor2, customer, service = create_test_data()
     
     tomorrow = timezone.now().date() + timedelta(days=1)
     
-    print(f\"🎯 Finding optimal booking time for:\")
-    print(f\"   👤 Vendor: {vendor1.get_full_name()}\")
-    print(f\"   🔧 Service: {service.name}\")
-    print(f\"   📍 Customer location: {customer.pincode}\")
-    print(f\"   📅 Date: {tomorrow}\")
+    print(f"🎯 Finding optimal booking time for:")
+    print(f"   👤 Vendor: {vendor1.get_full_name()}")
+    print(f"   🔧 Service: {service.name}")
+    print(f"   📍 Customer location: {customer.pincode}")
+    print(f"   📅 Date: {tomorrow}")
     print()
     
     try:
@@ -315,22 +315,22 @@ def test_optimal_booking_suggestion():
         )
         
         if optimal_slot:
-            print(f\"✅ Optimal booking suggestion found:\")
-            print(f\"   ⏰ Time: {optimal_slot['start_time'].strftime('%I:%M %p')} - {optimal_slot['end_time'].strftime('%I:%M %p')}\")
-            print(f\"   🚗 Travel time: {optimal_slot['travel_time_minutes']} min\")
-            print(f\"   📊 Optimization score: {optimal_slot['optimization_score']:.1f}/100\")
-            print(f\"   💰 Estimated cost: ${optimal_slot.get('estimated_cost', 'N/A')}\")
+            print(f"✅ Optimal booking suggestion found:")
+            print(f"   ⏰ Time: {optimal_slot['start_time'].strftime('%I:%M %p')} - {optimal_slot['end_time'].strftime('%I:%M %p')}")
+            print(f"   🚗 Travel time: {optimal_slot['travel_time_minutes']} min")
+            print(f"   📊 Optimization score: {optimal_slot['optimization_score']:.1f}/100")
+            print(f"   💰 Estimated cost: ${optimal_slot.get('estimated_cost', 'N/A')}")
         else:
-            print(f\"❌ No optimal slots available for the specified date\")
+            print(f"❌ No optimal slots available for the specified date")
             
     except Exception as e:
-        print(f\"❌ Error finding optimal slot: {e}\")
+        print(f"❌ Error finding optimal slot: {e}")
 
 def run_all_tests():
-    \"\"\"Run all smart buffering system tests\"\"\"
-    print_header(\"SMART BUFFERING SYSTEM - COMPREHENSIVE TEST\")
-    print(f\"🚀 Starting smart buffering system tests...\")
-    print(f\"⏰ Test started at: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}\")
+    """Run all smart buffering system tests"""
+    print_header("SMART BUFFERING SYSTEM - COMPREHENSIVE TEST")
+    print(f"🚀 Starting smart buffering system tests...")
+    print(f"⏰ Test started at: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
         # Test 1: Travel Time Service
@@ -348,20 +348,20 @@ def run_all_tests():
         # Test 5: Optimal Booking Suggestion
         test_optimal_booking_suggestion()
         
-        print_header(\"TEST SUMMARY\")
-        print(\"✅ All smart buffering system tests completed successfully!\")
-        print(\"\n🎯 Key Features Tested:\")
-        print(\"   ✓ Travel time calculation and caching\")
-        print(\"   ✓ Smart time slot generation\")
-        print(\"   ✓ Automatic buffer insertion\")
-        print(\"   ✓ Booking optimization with travel times\")
-        print(\"   ✓ Schedule efficiency analysis\")
-        print(\"   ✓ Optimal booking time suggestions\")
-        print(\"\n💡 Smart Buffering System is working correctly!\")
+        print_header("TEST SUMMARY")
+        print("✅ All smart buffering system tests completed successfully!")
+        print("\n🎯 Key Features Tested:")
+        print("   ✓ Travel time calculation and caching")
+        print("   ✓ Smart time slot generation")
+        print("   ✓ Automatic buffer insertion")
+        print("   ✓ Booking optimization with travel times")
+        print("   ✓ Schedule efficiency analysis")
+        print("   ✓ Optimal booking time suggestions")
+        print("\n💡 Smart Buffering System is working correctly!")
         
     except Exception as e:
-        print_header(\"TEST FAILED\")
-        print(f\"❌ Test failed with error: {e}\")
+        print_header("TEST FAILED")
+        print(f"❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 
