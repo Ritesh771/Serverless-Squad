@@ -44,8 +44,10 @@ from .travel_service import travel_service
 from .dynamic_pricing_service import DynamicPricingService
 from .dispute_service import dispute_service, DisputeResolutionService
 from .vendor_onboarding_service import VendorOnboardingService
-from .vendor_bonus_service import vendor_bonus_service
+from .vendor_bonus_service import VendorBonusService, AdvancedVendorBonusService
 from .vendor_ai_service import vendor_ai_service
+from .ai_services.pincode_ai import analyze_pincode_pulse
+from .dispute_service import AdvancedDisputeService
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -2127,3 +2129,118 @@ class VendorSearchAPIView(APIView):
             return 5  # Neutral demand index
         except:
             return 5  # Default demand index
+
+
+# Advanced AI and ML Features API Endpoints
+
+class PincodeAIAnalyticsAPIView(APIView):
+    """Pincode Pulse Engine AI analytics endpoint"""
+    permission_classes = [IsAuthenticated, (IsOpsManager | IsSuperAdmin)]
+    
+    def get(self, request):
+        """Get AI-powered pincode analytics"""
+        pincode = request.query_params.get('pincode')
+        analysis_period = int(request.query_params.get('days', 30))
+        
+        if not pincode:
+            return Response(
+                {'error': 'pincode parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Use the Pincode AI Engine
+            result = analyze_pincode_pulse(pincode, analysis_period)
+            
+            return Response({
+                'status': 'success',
+                'pincode_analysis': result,
+                'timestamp': timezone.now().isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Pincode AI analysis failed: {str(e)}")
+            return Response(
+                {'error': 'Failed to analyze pincode', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class AdvancedDisputeResolutionAPIView(APIView):
+    """Advanced dispute resolution with AI suggestions"""
+    permission_classes = [IsAuthenticated, (IsOpsManager | IsSuperAdmin)]
+    
+    def get(self, request, dispute_id):
+        """Get AI-powered dispute resolution suggestions"""
+        try:
+            dispute = Dispute.objects.get(id=dispute_id)
+            
+            # Generate auto-resolution analysis
+            resolution_analysis = AdvancedDisputeService.auto_resolve_disputes(dispute)
+            
+            # Generate escalation matrix
+            escalation_analysis = AdvancedDisputeService.escalation_matrix(dispute)
+            
+            return Response({
+                'status': 'success',
+                'dispute_id': str(dispute.id),
+                'resolution_analysis': resolution_analysis,
+                'escalation_analysis': escalation_analysis,
+                'timestamp': timezone.now().isoformat()
+            })
+            
+        except Dispute.DoesNotExist:
+            return Response(
+                {'error': 'Dispute not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Dispute resolution analysis failed: {str(e)}")
+            return Response(
+                {'error': 'Failed to analyze dispute', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class AdvancedVendorBonusAPIView(APIView):
+    """Advanced vendor bonus calculation with ML analytics"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get ML-powered vendor bonus analysis"""
+        vendor_id = request.query_params.get('vendor_id')
+        analysis_period = int(request.query_params.get('days', 30))
+        
+        # Determine vendor based on role and parameters
+        if request.user.role == 'vendor':
+            vendor = request.user
+        elif request.user.role in ['ops_manager', 'super_admin'] and vendor_id:
+            try:
+                vendor = User.objects.get(id=vendor_id, role='vendor')
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'Vendor not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            return Response(
+                {'error': 'Unauthorized or missing vendor_id'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            # Use the Advanced Vendor Bonus Service
+            result = AdvancedVendorBonusService.calculate_performance_bonuses(vendor, analysis_period)
+            
+            return Response({
+                'status': 'success',
+                'vendor_bonus_analysis': result,
+                'timestamp': timezone.now().isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Advanced vendor bonus analysis failed: {str(e)}")
+            return Response(
+                {'error': 'Failed to analyze vendor bonuses', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

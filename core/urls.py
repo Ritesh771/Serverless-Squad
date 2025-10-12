@@ -9,7 +9,9 @@ from .views import (
     EarningsViewSet, PerformanceMetricsViewSet,
     DisputeResolutionAPIView, VendorBonusAPIView, VendorAIAnalyticsAPIView,
     EnhancedSignatureAPIView, VendorDocumentViewSet,
-    dispute_analytics, vendor_onboarding_analytics, chat_query, chat_context
+    dispute_analytics, vendor_onboarding_analytics, chat_query, chat_context,
+    # Advanced Features APIs
+    PincodeAIAnalyticsAPIView, AdvancedDisputeResolutionAPIView, AdvancedVendorBonusAPIView
 )
 from .auth_views import CustomTokenObtainPairView, send_otp, verify_otp, send_vendor_otp, verify_vendor_otp
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -55,6 +57,11 @@ urlpatterns = [
     path('api/vendor-bonuses/', VendorBonusAPIView.as_view(), name='vendor-bonuses'),
     path('api/vendor-ai-analytics/', VendorAIAnalyticsAPIView.as_view(), name='vendor-ai-analytics'),
     path('api/enhanced-signatures/', EnhancedSignatureAPIView.as_view(), name='enhanced-signatures'),
+    
+    # Advanced Features APIs
+    path('api/pincode-ai-analytics/', PincodeAIAnalyticsAPIView.as_view(), name='pincode-ai-analytics'),
+    path('api/advanced-dispute-resolution/<uuid:dispute_id>/', AdvancedDisputeResolutionAPIView.as_view(), name='advanced-dispute-resolution'),
+    path('api/advanced-vendor-bonus/', AdvancedVendorBonusAPIView.as_view(), name='advanced-vendor-bonus'),
     
     # Chatbot APIs
     path('api/chat/query/', chat_query, name='chat-query'),
