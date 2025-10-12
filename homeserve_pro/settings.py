@@ -231,6 +231,8 @@ STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='your_stripe_web
 
 # Email Configuration (SMTP for OTP)
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+# SMTP Email Configuration
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
 EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
 EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
@@ -252,13 +254,8 @@ if DEBUG:
     except ImportError:
         pass
 
-# Twilio Configuration
-TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
-TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
-TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default='')
-
-# OTP Configuration
-OTP_METHOD = config('OTP_METHOD', default='email')  # 'email' or 'sms'
+# OTP Configuration (Email Only)
+OTP_METHOD = config('OTP_METHOD', default='email')  # Only email supported now
 OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=5, cast=int)
 OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
 
