@@ -1,12 +1,348 @@
 from django.utils import timezone
 from django.db.models import Q
+from django.utils import timezone
 from .models import Dispute, Booking, User, Signature, BusinessAlert, DisputeMessage
 from .utils import AuditLogger
 from .notification_service import NotificationService
 import logging
 import uuid
+from datetime import timedelta
+from typing import Dict, List, Optional
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
+
+
+class AdvancedDisputeService:
+    """
+    Enhanced dispute resolution with AI-powered suggestions and smart escalation
+    """
+    
+    @staticmethod
+    def auto_resolve_disputes(dispute):
+        """
+        AI-powered dispute resolution suggestions
+        Currently rule-based, ready for ML enhancement
+        """
+        try:
+            # Get dispute context
+            context = AdvancedDisputeService._analyze_dispute_context(dispute)
+            
+            # Generate resolution suggestions
+            suggestions = AdvancedDisputeService._generate_resolution_suggestions(dispute, context)
+            
+            # Check if auto-resolution is possible
+            auto_resolution = AdvancedDisputeService._check_auto_resolution_eligibility(dispute, context)
+            
+            result = {
+                'dispute_id': str(dispute.id),
+                'context_analysis': context,
+                'resolution_suggestions': suggestions,
+                'auto_resolution': auto_resolution,
+                'confidence_score': AdvancedDisputeService._calculate_confidence_score(dispute, suggestions),
+                'generated_at': timezone.now().isoformat()
+            }
+            
+            logger.info(f"Auto-resolution analysis completed for dispute {dispute.id}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to analyze dispute {dispute.id}: {str(e)}")
+            return {'error': str(e)}
+    
+    @staticmethod
+    def escalation_matrix(dispute):
+        """
+        Smart escalation based on severity, type, and context
+        """
+        try:
+            escalation_rules = {
+                'immediate_escalation': [],
+                'escalate_in_24h': [],
+                'escalate_in_48h': [],
+                'no_escalation_needed': []
+            }
+            
+            # Check immediate escalation conditions
+            if dispute.severity == 'critical':
+                escalation_rules['immediate_escalation'].append({
+                    'reason': 'Critical severity level',
+                    'escalate_to': 'super_admin',
+                    'action': 'Immediate attention required'
+                })
+            
+            if dispute.dispute_type == 'payment_issue' and hasattr(dispute.booking, 'payment'):
+                payment_amount = float(dispute.booking.payment.amount)
+                if payment_amount > 5000:  # High-value disputes
+                    escalation_rules['immediate_escalation'].append({
+                        'reason': f'High-value payment dispute (₹{payment_amount})',
+                        'escalate_to': 'super_admin',
+                        'action': 'Finance team involvement required'
+                    })
+            
+            # Check vendor performance history
+            vendor_history = AdvancedDisputeService._get_vendor_dispute_history(dispute.vendor)
+            if vendor_history['dispute_rate'] > 15:  # More than 15% dispute rate
+                escalation_rules['escalate_in_24h'].append({
+                    'reason': f'Vendor has high dispute rate ({vendor_history["dispute_rate"]}%)',
+                    'escalate_to': 'ops_manager',
+                    'action': 'Vendor performance review required'
+                })
+            
+            # Check resolution timeline
+            dispute_age_hours = (timezone.now() - dispute.created_at).total_seconds() / 3600
+            if dispute_age_hours > 48 and dispute.status == 'investigating':
+                escalation_rules['escalate_in_24h'].append({
+                    'reason': 'Dispute unresolved for >48 hours',
+                    'escalate_to': 'ops_manager',
+                    'action': 'Priority resolution required'
+                })
+            
+            # Customer satisfaction impact
+            if dispute.dispute_type in ['service_quality', 'vendor_behavior']:
+                escalation_rules['escalate_in_48h'].append({
+                    'reason': 'Customer satisfaction impact',
+                    'escalate_to': 'ops_manager',
+                    'action': 'Quality assurance review'
+                })
+            
+            # If no escalation needed
+            if not any(escalation_rules[key] for key in ['immediate_escalation', 'escalate_in_24h', 'escalate_in_48h']):
+                escalation_rules['no_escalation_needed'].append({
+                    'reason': 'Standard dispute resolution process adequate',
+                    'action': 'Continue with assigned mediator'
+                })
+            
+            return {
+                'dispute_id': str(dispute.id),
+                'escalation_matrix': escalation_rules,
+                'recommended_action': AdvancedDisputeService._get_recommended_escalation_action(escalation_rules),
+                'analysis_timestamp': timezone.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to generate escalation matrix for dispute {dispute.id}: {str(e)}")
+            return {'error': str(e)}
+    
+    @staticmethod
+    def _analyze_dispute_context(dispute):
+        """Analyze dispute context for resolution suggestions"""
+        context = {
+            'dispute_type': dispute.dispute_type,
+            'severity': dispute.severity,
+            'booking_value': float(dispute.booking.total_price),
+            'service_type': dispute.booking.service.name,
+            'vendor_experience': AdvancedDisputeService._get_vendor_experience(dispute.vendor),
+            'customer_history': AdvancedDisputeService._get_customer_history(dispute.customer),
+            'has_photos': bool(dispute.booking.photos.exists()),
+            'signature_status': getattr(dispute.booking, 'signature', None) and dispute.booking.signature.status or 'none'
+        }
+        
+        return context
+    
+    @staticmethod
+    def _generate_resolution_suggestions(dispute, context):
+        """Generate smart resolution suggestions based on context"""
+        suggestions = []
+        
+        # Service quality disputes
+        if dispute.dispute_type == 'service_quality':
+            if context['has_photos']:
+                suggestions.append({
+                    'type': 'evidence_review',
+                    'suggestion': 'Review before/after photos for service quality assessment',
+                    'priority': 'high',
+                    'estimated_resolution_time': '2-4 hours'
+                })
+            
+            if context['booking_value'] < 1000:
+                suggestions.append({
+                    'type': 'partial_refund',
+                    'suggestion': f'Consider 25-50% refund (₹{context["booking_value"] * 0.25:.0f}-{context["booking_value"] * 0.5:.0f})',
+                    'priority': 'medium',
+                    'estimated_resolution_time': '1-2 hours'
+                })
+            else:
+                suggestions.append({
+                    'type': 'service_redo',
+                    'suggestion': 'Offer free service redo with different vendor',
+                    'priority': 'high',
+                    'estimated_resolution_time': '4-8 hours'
+                })
+        
+        # Payment disputes
+        elif dispute.dispute_type == 'payment_issue':
+            suggestions.append({
+                'type': 'payment_verification',
+                'suggestion': 'Verify payment processing logs and Stripe records',
+                'priority': 'critical',
+                'estimated_resolution_time': '1-2 hours'
+            })
+            
+            if context['signature_status'] != 'signed':
+                suggestions.append({
+                    'type': 'signature_review',
+                    'suggestion': 'Payment hold justified - signature not completed',
+                    'priority': 'high',
+                    'estimated_resolution_time': '30 minutes'
+                })
+        
+        # Vendor behavior disputes
+        elif dispute.dispute_type == 'vendor_behavior':
+            vendor_exp = context['vendor_experience']
+            if vendor_exp['total_jobs'] < 10:
+                suggestions.append({
+                    'type': 'vendor_training',
+                    'suggestion': 'New vendor - provide additional training and monitoring',
+                    'priority': 'medium',
+                    'estimated_resolution_time': '2-4 hours'
+                })
+            
+            suggestions.append({
+                'type': 'compensation',
+                'suggestion': f'Provide service credit of ₹{context["booking_value"] * 0.5:.0f}',
+                'priority': 'medium',
+                'estimated_resolution_time': '1-2 hours'
+            })
+        
+        return suggestions
+    
+    @staticmethod
+    def _check_auto_resolution_eligibility(dispute, context):
+        """Check if dispute can be auto-resolved"""
+        auto_resolution = {
+            'eligible': False,
+            'reason': 'Manual review required',
+            'suggested_action': None
+        }
+        
+        # Low-value, simple disputes can be auto-resolved
+        if (context['booking_value'] < 500 and 
+            dispute.dispute_type in ['booking_cancellation'] and
+            dispute.severity in ['low', 'medium']):
+            
+            auto_resolution = {
+                'eligible': True,
+                'reason': 'Low-value, simple dispute eligible for auto-resolution',
+                'suggested_action': {
+                    'action': 'full_refund',
+                    'amount': context['booking_value'],
+                    'message': 'Automatic refund processed for booking cancellation'
+                }
+            }
+        
+        return auto_resolution
+    
+    @staticmethod
+    def _calculate_confidence_score(dispute, suggestions):
+        """Calculate confidence score for resolution suggestions"""
+        base_score = 70
+        
+        # Increase confidence based on available evidence
+        if hasattr(dispute.booking, 'photos') and dispute.booking.photos.exists():
+            base_score += 10
+        
+        if dispute.customer_evidence:
+            base_score += 10
+        
+        if dispute.vendor_evidence:
+            base_score += 10
+        
+        # Decrease confidence for complex disputes
+        if dispute.severity == 'critical':
+            base_score -= 15
+        
+        if dispute.dispute_type in ['payment_issue', 'vendor_behavior']:
+            base_score -= 10
+        
+        return min(95, max(30, base_score))
+    
+    @staticmethod
+    def _get_vendor_dispute_history(vendor):
+        """Get vendor's dispute history for analysis"""
+        if not vendor:
+            return {'total_jobs': 0, 'disputes': 0, 'dispute_rate': 0}
+        
+        from django.apps import apps
+        Booking = apps.get_model('core', 'Booking')
+        Dispute = apps.get_model('core', 'Dispute')
+        
+        total_jobs = Booking.objects.filter(vendor=vendor, status__in=['completed', 'signed']).count()
+        disputes = Dispute.objects.filter(vendor=vendor).count()
+        
+        dispute_rate = (disputes / total_jobs * 100) if total_jobs > 0 else 0
+        
+        return {
+            'total_jobs': total_jobs,
+            'disputes': disputes,
+            'dispute_rate': round(dispute_rate, 2)
+        }
+    
+    @staticmethod
+    def _get_vendor_experience(vendor):
+        """Get vendor experience metrics"""
+        if not vendor:
+            return {'total_jobs': 0, 'completion_rate': 0, 'avg_rating': 0}
+        
+        from django.apps import apps
+        Booking = apps.get_model('core', 'Booking')
+        
+        total_jobs = Booking.objects.filter(vendor=vendor).count()
+        completed_jobs = Booking.objects.filter(vendor=vendor, status__in=['completed', 'signed']).count()
+        
+        completion_rate = (completed_jobs / total_jobs * 100) if total_jobs > 0 else 0
+        
+        # Get average rating (simplified)
+        avg_rating = 4.2  # Placeholder - would calculate from signatures
+        
+        return {
+            'total_jobs': total_jobs,
+            'completion_rate': round(completion_rate, 2),
+            'avg_rating': avg_rating
+        }
+    
+    @staticmethod
+    def _get_customer_history(customer):
+        """Get customer booking history"""
+        from django.apps import apps
+        Booking = apps.get_model('core', 'Booking')
+        
+        total_bookings = Booking.objects.filter(customer=customer).count()
+        completed_bookings = Booking.objects.filter(customer=customer, status__in=['completed', 'signed']).count()
+        
+        return {
+            'total_bookings': total_bookings,
+            'completed_bookings': completed_bookings,
+            'is_frequent_customer': total_bookings > 5
+        }
+    
+    @staticmethod
+    def _get_recommended_escalation_action(escalation_rules):
+        """Get the most urgent escalation action"""
+        if escalation_rules['immediate_escalation']:
+            return {
+                'urgency': 'immediate',
+                'action': escalation_rules['immediate_escalation'][0],
+                'timeline': 'Now'
+            }
+        elif escalation_rules['escalate_in_24h']:
+            return {
+                'urgency': 'high',
+                'action': escalation_rules['escalate_in_24h'][0],
+                'timeline': 'Within 24 hours'
+            }
+        elif escalation_rules['escalate_in_48h']:
+            return {
+                'urgency': 'medium',
+                'action': escalation_rules['escalate_in_48h'][0],
+                'timeline': 'Within 48 hours'
+            }
+        else:
+            return {
+                'urgency': 'low',
+                'action': escalation_rules['no_escalation_needed'][0],
+                'timeline': 'No escalation needed'
+            }
 
 
 class DisputeResolutionService:
