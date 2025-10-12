@@ -6,9 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Calendar, MapPin, User, DollarSign, FileText, Image as ImageIcon, Star, Clock } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, User, DollarSign, FileText, Image as ImageIcon, Star, Clock, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { PaymentTimeline } from '@/components/PaymentTimeline';
+import { StripePaymentForm } from '@/components/StripePaymentForm';
 import api from '@/services/api';
 import { ENDPOINTS } from '@/services/endpoints';
 
@@ -62,6 +63,7 @@ export default function BookingDetails() {
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -88,6 +90,17 @@ export default function BookingDetails() {
     // TODO: Connect to backend API
     toast.success('Review submitted successfully!');
     setShowReviewForm(false);
+  };
+
+  const handlePaymentSuccess = () => {
+    setShowPaymentForm(false);
+    toast.success('Payment processed successfully!');
+    // Refresh booking details to show updated payment status
+    fetchBookingDetails();
+  };
+
+  const handleCancelPayment = () => {
+    setShowPaymentForm(false);
   };
 
   if (loading) {
@@ -119,6 +132,23 @@ export default function BookingDetails() {
     const date = new Date(dateString);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+
+  if (showPaymentForm) {
+    return (
+      <div className="w-full max-w-6xl mx-auto space-y-6 p-4 md:p-6">
+        <Button variant="ghost" onClick={() => setShowPaymentForm(false)}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Booking
+        </Button>
+        <StripePaymentForm 
+          bookingId={booking.id}
+          amount={booking.total_price * 100} // Convert to cents
+          onSuccess={handlePaymentSuccess}
+          onCancel={handleCancelPayment}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 p-4 md:p-6">
@@ -211,10 +241,13 @@ export default function BookingDetails() {
                         alt={photo.description || 'Job photo'}
                         className="w-full h-40 object-cover rounded-lg"
                       />
-                      <Badge className="absolute top-2 left-2" variant={
-                        photo.image_type === 'before' ? 'destructive' :
-                        photo.image_type === 'after' ? 'success' : 'secondary'
-                      }>
+                      <Badge 
+                        className={`absolute top-2 left-2 ${photo.image_type === 'after' ? 'bg-green-100 text-green-800' : ''}`}
+                        variant={
+                          photo.image_type === 'before' ? 'destructive' :
+                          photo.image_type === 'after' ? 'secondary' : 'secondary'
+                        }
+                      >
                         {photo.image_type.charAt(0).toUpperCase() + photo.image_type.slice(1)}
                       </Badge>
                     </div>
@@ -236,7 +269,7 @@ export default function BookingDetails() {
                 <span className="text-muted-foreground">Total Amount</span>
                 <span className="text-2xl font-bold text-primary">${booking.total_price.toFixed(2)}</span>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground mb-4">
                 Payment processed securely via HomeServe Pro
               </p>
               
@@ -252,6 +285,17 @@ export default function BookingDetails() {
                     holdReason={booking.payment.hold_reason}
                   />
                 </div>
+              )}
+              
+              {/* Payment Button */}
+              {booking.payment?.status === 'pending' && (
+                <Button 
+                  className="w-full mt-4" 
+                  onClick={() => setShowPaymentForm(true)}
+                >
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  Make Payment
+                </Button>
               )}
             </CardContent>
           </Card>
