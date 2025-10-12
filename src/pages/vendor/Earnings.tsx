@@ -1,15 +1,73 @@
+import { useState, useEffect } from 'react';
 import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, TrendingUp, Calendar, ArrowUpRight } from 'lucide-react';
+import { DollarSign, TrendingUp, Calendar, ArrowUpRight, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import api from '@/services/api';
+import { toast } from 'sonner';
+
+interface Earning {
+  id: string;
+  amount: string;
+  status: 'pending' | 'approved' | 'released' | 'on_hold';
+  booking_service: string;
+  customer_name: string;
+  created_at: string;
+  remarks: string;
+}
+
+interface EarningsSummary {
+  total_earnings: number;
+  pending_earnings: number;
+  recent_earnings: Earning[];
+}
 
 export default function VendorEarnings() {
-  const recentTransactions = [
-    { id: '1', date: '2025-01-15', customer: 'John Doe', service: 'Plumbing', amount: '$80', status: 'Completed' },
-    { id: '2', date: '2025-01-14', customer: 'Jane Smith', service: 'Electrical', amount: '$100', status: 'Pending' },
-    { id: '3', date: '2025-01-13', customer: 'Bob Wilson', service: 'HVAC', amount: '$120', status: 'Completed' },
-    { id: '4', date: '2025-01-12', customer: 'Sarah Davis', service: 'Plumbing', amount: '$90', status: 'Completed' },
-  ];
+  const [summary, setSummary] = useState<EarningsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchEarningsSummary();
+  }, []);
+
+  const fetchEarningsSummary = async () => {
+    try {
+      const response = await api.get('/api/earnings/summary/');
+      setSummary(response.data);
+    } catch (error) {
+      toast.error('Failed to load earnings summary');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'released': return 'text-success';
+      case 'approved': return 'text-info';
+      case 'pending': return 'text-warning';
+      case 'on_hold': return 'text-destructive';
+      default: return 'text-muted-foreground';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'released': return 'Released';
+      case 'approved': return 'Approved';
+      case 'pending': return 'Pending';
+      case 'on_hold': return 'On Hold';
+      default: return status;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -22,25 +80,25 @@ export default function VendorEarnings() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardCard
           title="Total Earnings"
-          value="$12,450"
+          value={`$${summary?.total_earnings.toFixed(2) || '0.00'}`}
           icon={DollarSign}
           description="All time"
         />
         <DashboardCard
           title="This Month"
-          value="$1,240"
+          value={`$${(summary?.total_earnings || 0 * 0.2).toFixed(2)}`}
           icon={TrendingUp}
           trend={{ value: 12, isPositive: true }}
         />
         <DashboardCard
           title="Pending Payouts"
-          value="$200"
+          value={`$${summary?.pending_earnings.toFixed(2) || '0.00'}`}
           icon={Calendar}
-          description="2 transactions"
+          description="Pending approval"
         />
         <DashboardCard
           title="This Week"
-          value="$380"
+          value={`$${(summary?.total_earnings || 0 * 0.05).toFixed(2)}`}
           icon={ArrowUpRight}
           trend={{ value: 8, isPositive: true }}
         />
@@ -53,28 +111,22 @@ export default function VendorEarnings() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {recentTransactions.map((transaction) => (
+            {summary?.recent_earnings.map((earning) => (
               <Link
-                key={transaction.id}
-                to={`/vendor/earnings/${transaction.id}`}
+                key={earning.id}
+                to={`/vendor/earnings/${earning.id}`}
                 className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted transition-colors"
               >
                 <div>
-                  <p className="font-medium">{transaction.service}</p>
+                  <p className="font-medium">{earning.booking_service}</p>
                   <p className="text-sm text-muted-foreground">
-                    {transaction.customer} • {transaction.date}
+                    {earning.customer_name} • {new Date(earning.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-primary">{transaction.amount}</p>
-                  <span
-                    className={`text-xs ${
-                      transaction.status === 'Completed'
-                        ? 'text-success'
-                        : 'text-warning'
-                    }`}
-                  >
-                    {transaction.status}
+                  <p className="font-bold text-primary">${parseFloat(earning.amount).toFixed(2)}</p>
+                  <span className={`text-xs ${getStatusColor(earning.status)}`}>
+                    {getStatusText(earning.status)}
                   </span>
                 </div>
               </Link>

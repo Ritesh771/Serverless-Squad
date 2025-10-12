@@ -20,8 +20,10 @@ class NotificationService:
     """Enhanced notification service for email and SMS"""
     
     @staticmethod
-    def generate_otp(length=6):
+    def generate_otp(length=None):
         """Generate a random OTP"""
+        if length is None:
+            length = getattr(settings, 'OTP_LENGTH', 6)
         return ''.join(random.choices(string.digits, k=length))
     
     @staticmethod
@@ -35,7 +37,7 @@ class NotificationService:
                 'otp': otp,
                 'user_name': user_name,
                 'app_name': getattr(settings, 'APP_NAME', 'HomeServe Pro'),
-                'validity_minutes': 5
+                'validity_minutes': getattr(settings, 'OTP_EXPIRY_MINUTES', 5)
             }
             
             # Create HTML and text versions
@@ -52,7 +54,7 @@ class NotificationService:
                     <div style="background: #007bff; color: white; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; border-radius: 5px; margin: 20px 0;">
                         {otp}
                     </div>
-                    <p style="color: #666;">This code is valid for 5 minutes.</p>
+                    <p style="color: #666;">This code is valid for {getattr(settings, 'OTP_EXPIRY_MINUTES', 5)} minutes.</p>
                     <p style="color: #666;">If you didn't request this code, please ignore this email.</p>
                     <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
                     <p style="color: #999; font-size: 12px;">
@@ -70,7 +72,7 @@ class NotificationService:
             
             Your verification code is: {otp}
             
-            This code is valid for 5 minutes.
+            This code is valid for {getattr(settings, 'OTP_EXPIRY_MINUTES', 5)} minutes.
             
             If you didn't request this code, please ignore this email.
             
@@ -114,7 +116,7 @@ class NotificationService:
             client = Client(account_sid, auth_token)
             
             message = client.messages.create(
-                body=f'Your HomeServe Pro verification code is: {otp}. Valid for 5 minutes. Do not share this code.',
+                body=f'Your HomeServe Pro verification code is: {otp}. Valid for {getattr(settings, "OTP_EXPIRY_MINUTES", 5)} minutes. Do not share this code.',
                 from_=from_number,
                 to=phone_number
             )
@@ -130,8 +132,10 @@ class NotificationService:
             return False
     
     @staticmethod
-    def store_otp(identifier, otp, ttl=300):  # 5 minutes TTL
+    def store_otp(identifier, otp, ttl=None):
         """Store OTP in cache with TTL"""
+        if ttl is None:
+            ttl = getattr(settings, 'OTP_EXPIRY_MINUTES', 5) * 60  # Convert to seconds
         cache_key = f"otp_{identifier}"
         cache.set(cache_key, otp, ttl)
         logger.info(f"OTP stored for {identifier} with {ttl}s TTL")
@@ -152,7 +156,7 @@ class NotificationService:
         return False
     
     @staticmethod
-    def send_and_store_otp(identifier, method='email', user_name=""):
+    def send_and_store_otp(identifier, method=None, user_name=""):
         """
         Generate, send, and store OTP
         
@@ -161,6 +165,9 @@ class NotificationService:
             method: 'email' or 'sms'
             user_name: optional user name for personalization
         """
+        if method is None:
+            method = getattr(settings, 'OTP_METHOD', 'email')
+        
         otp = NotificationService.generate_otp()
         
         # For development, also log the OTP

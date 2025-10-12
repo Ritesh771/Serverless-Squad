@@ -1,28 +1,40 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Q
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from datetime import datetime, date
+import json
 import logging
 
 logger = logging.getLogger(__name__)
 
 from .models import (
     User, Service, Booking, Photo, Signature, Payment, AuditLog,
-    VendorAvailability, TravelTimeCache
+    VendorAvailability, TravelTimeCache, Dispute, VendorBonus,
+    VendorApplication, VendorDocument, DisputeMessage, Address,
+    Earnings, PerformanceMetrics, NotificationLog, PincodeAnalytics,
+    BusinessAlert
 )
 from .serializers import (
     UserSerializer, ServiceSerializer, BookingSerializer,
     PhotoSerializer, SignatureSerializer, PaymentSerializer, AuditLogSerializer,
-    VendorAvailabilitySerializer
+    VendorAvailabilitySerializer, VendorApplicationSerializer, VendorDocumentSerializer,
+    VendorApplicationListSerializer, VendorDocumentUploadSerializer,
+    DisputeSerializer, DisputeMessageSerializer, DisputeListSerializer,
+    DisputeMessageListSerializer, AddressSerializer, EarningsSerializer,
+    PerformanceMetricsSerializer
 )
 from .permissions import (
     IsCustomer, IsVendor, IsOnboardManager, IsOpsManager, 
-    IsSuperAdmin, IsAdminUser, IsOwnerOrAdmin
+    IsSuperAdmin, IsAdminUser, IsOwnerOrAdmin, IsDisputeParty
 )
 from .utils import AuditLogger
 from .payment_service import PaymentService
@@ -30,6 +42,10 @@ from .signature_service import SignatureService
 from .scheduling_service import scheduling_service
 from .travel_service import travel_service
 from .dynamic_pricing_service import DynamicPricingService
+from .dispute_service import dispute_service, DisputeResolutionService
+from .vendor_onboarding_service import VendorOnboardingService
+from .vendor_bonus_service import vendor_bonus_service
+from .vendor_ai_service import vendor_ai_service
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -615,13 +631,417 @@ class DynamicPricingAPIView(APIView):
             )
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-import json
-import logging
+class DisputeResolutionAPIView(APIView):
+    """Dispute resolution endpoints"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """Create a new dispute"""
+        action = request.data.get('action')
+        
+        if action == 'create_dispute':
+            booking_id = request.data.get('booking_id')
+            dispute_type = request.data.get('dispute_type')
+            title = request.data.get('title')
+            description = request.data.get('description')
+            evidence = request.data.get('evidence')
+            
+            try:
+                booking = Booking.objects.get(id=booking_id, customer=request.user)
+                dispute = dispute_service.create_dispute(
+                    booking, request.user, dispute_type, title, description, evidence
+                )
+                
+                if dispute:
+                    return Response({
+                        'status': 'success',
+                        'dispute_id': str(dispute.id),
+                        'message': 'Dispute created successfully'
+                    })
+                else:
+                    return Response({
+                        'status': 'error',
+                        'message': 'Failed to create dispute'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+            except Booking.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': 'Booking not found or unauthorized'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        elif action == 'add_vendor_response':
+            dispute_id = request.data.get('dispute_id')
+            evidence = request.data.get('evidence')
+            response_notes = request.data.get('response_notes', '')
+            
+            success = dispute_service.add_vendor_response(
+                dispute_id, request.user, evidence, response_notes
+            )
+            
+            if success:
+                return Response({
+                    'status': 'success',
+                    'message': 'Vendor response added successfully'
+                })
+            else:
+                return Response({
+                    'status': 'error',
+                    'message': 'Failed to add vendor response'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        elif action == 'resolve_dispute':
+            # Only for ops managers and super admins
+            if request.user.role not in ['ops_manager', 'super_admin']:
+                return Response({
+                    'status': 'error',
+                    'message': 'Unauthorized to resolve disputes'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            dispute_id = request.data.get('dispute_id')
+            resolution_notes = request.data.get('resolution_notes')
+            resolution_amount = request.data.get('resolution_amount')
+            evidence = request.data.get('evidence')
+            
+            success = dispute_service.resolve_dispute(
+                dispute_id, request.user, resolution_notes, resolution_amount, evidence
+            )
+            
+            if success:
+                return Response({
+                    'status': 'success',
+                    'message': 'Dispute resolved successfully'
+                })
+            else:
+                return Response({
+                    'status': 'error',
+                    'message': 'Failed to resolve dispute'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'status': 'error',
+            'message': 'Invalid action'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        """Get dispute analytics"""
+        if request.user.role not in ['ops_manager', 'super_admin']:
+            return Response({
+                'status': 'error',
+                'message': 'Unauthorized'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        date_range_days = int(request.query_params.get('days', 30))
+        analytics = dispute_service.get_dispute_analytics(date_range_days)
+        
+        return Response({
+            'status': 'success',
+            'analytics': analytics,
+            'timestamp': timezone.now().isoformat()
+        })
 
-logger = logging.getLogger(__name__)
+
+class VendorBonusAPIView(APIView):
+    """Vendor bonus calculation and management endpoints"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """Calculate vendor bonuses"""
+        action = request.data.get('action')
+        
+        if action == 'calculate_monthly_bonuses':
+            # Only for admins or the vendor themselves
+            vendor_id = request.data.get('vendor_id')
+            year = request.data.get('year', timezone.now().year)
+            month = request.data.get('month', timezone.now().month)
+            
+            if request.user.role == 'vendor':
+                vendor = request.user
+            elif request.user.role in ['ops_manager', 'super_admin']:
+                try:
+                    vendor = User.objects.get(id=vendor_id, role='vendor')
+                except User.DoesNotExist:
+                    return Response({
+                        'status': 'error',
+                        'message': 'Vendor not found'
+                    }, status=status.HTTP_404_NOT_FOUND)
+            else:
+                return Response({
+                    'status': 'error',
+                    'message': 'Unauthorized'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            bonuses = vendor_bonus_service.calculate_monthly_bonuses(vendor, year, month)
+            
+            return Response({
+                'status': 'success',
+                'bonuses': [
+                    {
+                        'id': str(bonus.id),
+                        'type': bonus.get_bonus_type_display(),
+                        'amount': float(bonus.amount),
+                        'criteria': bonus.criteria_met,
+                        'notes': bonus.notes
+                    }
+                    for bonus in bonuses
+                ],
+                'total_amount': sum(bonus.amount for bonus in bonuses)
+            })
+        
+        elif action == 'calculate_surge_bonus':
+            booking_id = request.data.get('booking_id')
+            
+            try:
+                booking = Booking.objects.get(id=booking_id)
+                
+                # Check authorization
+                if (request.user.role == 'vendor' and booking.vendor != request.user) or \
+                   (request.user.role not in ['vendor', 'ops_manager', 'super_admin']):
+                    return Response({
+                        'status': 'error',
+                        'message': 'Unauthorized'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                
+                surge_bonus = vendor_bonus_service.calculate_real_time_surge_bonus(booking)
+                
+                return Response({
+                    'status': 'success',
+                    'surge_bonus': surge_bonus
+                })
+                
+            except Booking.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': 'Booking not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'status': 'error',
+            'message': 'Invalid action'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        """Get vendor bonus summary"""
+        vendor_id = request.query_params.get('vendor_id')
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        
+        if request.user.role == 'vendor':
+            vendor = request.user
+        elif request.user.role in ['ops_manager', 'super_admin'] and vendor_id:
+            try:
+                vendor = User.objects.get(id=vendor_id, role='vendor')
+            except User.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': 'Vendor not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Unauthorized or missing vendor_id'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        summary = vendor_bonus_service.get_vendor_bonus_summary(
+            vendor, 
+            int(year) if year else None, 
+            int(month) if month else None
+        )
+        
+        return Response({
+            'status': 'success',
+            'vendor_id': vendor.id,
+            'vendor_name': vendor.get_full_name(),
+            'summary': summary,
+            'timestamp': timezone.now().isoformat()
+        })
+
+
+class VendorAIAnalyticsAPIView(APIView):
+    """AI-based vendor analytics and scoring endpoints"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get vendor AI score and analytics"""
+        vendor_id = request.query_params.get('vendor_id')
+        analysis_period = int(request.query_params.get('days', 90))
+        
+        if request.user.role == 'vendor':
+            vendor = request.user
+        elif request.user.role in ['ops_manager', 'super_admin'] and vendor_id:
+            try:
+                vendor = User.objects.get(id=vendor_id, role='vendor')
+            except User.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': 'Vendor not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Unauthorized or missing vendor_id'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Calculate vendor score
+        score_data = vendor_ai_service.calculate_vendor_score(vendor, analysis_period)
+        
+        return Response({
+            'status': 'success',
+            'vendor_analytics': score_data,
+            'timestamp': timezone.now().isoformat()
+        })
+    
+    def post(self, request):
+        """AI-based predictions and analysis"""
+        action = request.data.get('action')
+        
+        if action == 'predict_service_duration':
+            service_id = request.data.get('service_id')
+            vendor_id = request.data.get('vendor_id')
+            pincode = request.data.get('pincode')
+            
+            try:
+                service = Service.objects.get(id=service_id)
+                vendor = User.objects.get(id=vendor_id, role='vendor')
+                
+                prediction = vendor_ai_service.predict_service_duration(service, vendor, pincode)
+                
+                return Response({
+                    'status': 'success',
+                    'prediction': prediction
+                })
+                
+            except (Service.DoesNotExist, User.DoesNotExist) as e:
+                return Response({
+                    'status': 'error',
+                    'message': f'Resource not found: {str(e)}'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        elif action == 'detect_fraud':
+            booking_id = request.data.get('booking_id')
+            
+            # Only allow admins to run fraud detection
+            if request.user.role not in ['ops_manager', 'super_admin']:
+                return Response({
+                    'status': 'error',
+                    'message': 'Unauthorized'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            try:
+                booking = Booking.objects.get(id=booking_id)
+                fraud_analysis = vendor_ai_service.detect_fraudulent_patterns(booking)
+                
+                return Response({
+                    'status': 'success',
+                    'fraud_analysis': fraud_analysis
+                })
+                
+            except Booking.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': 'Booking not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'status': 'error',
+            'message': 'Invalid action'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Enhanced signature endpoints
+class EnhancedSignatureAPIView(APIView):
+    """Enhanced signature endpoints with photo analysis"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """Enhanced signature request with photo analysis"""
+        action = request.data.get('action')
+        
+        if action == 'request_signature_with_photos':
+            booking_id = request.data.get('booking_id')
+            photo_ids = request.data.get('photo_ids', [])
+            
+            try:
+                booking = Booking.objects.get(id=booking_id, vendor=request.user)
+                
+                # Verify photos exist and belong to this booking
+                photos = Photo.objects.filter(
+                    id__in=photo_ids,
+                    booking=booking
+                )
+                
+                if photos.count() < 2:  # Need at least before and after
+                    return Response({
+                        'status': 'error',
+                        'message': 'At least 2 photos (before/after) are required'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Request signature (existing functionality)
+                signature = SignatureService.request_signature(booking, request.user)
+                
+                if signature:
+                    return Response({
+                        'status': 'success',
+                        'signature_id': str(signature.id),
+                        'message': 'Signature requested with photos'
+                    })
+                else:
+                    return Response({
+                        'status': 'error',
+                        'message': 'Failed to request signature'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+            except Booking.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': 'Booking not found or unauthorized'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        elif action == 'reject_signature':
+            # Customer rejecting signature - create dispute
+            signature_id = request.data.get('signature_id')
+            reason = request.data.get('reason')
+            evidence = request.data.get('evidence')
+            
+            try:
+                signature = Signature.objects.get(id=signature_id, booking__customer=request.user)
+                
+                # Create dispute instead of signing
+                dispute = dispute_service.create_dispute(
+                    signature.booking,
+                    request.user,
+                    'signature_refusal',
+                    f'Signature rejection: {reason}',
+                    f'Customer rejected signature for booking {signature.booking.id}. Reason: {reason}',
+                    evidence
+                )
+                
+                if dispute:
+                    # Update signature status
+                    signature.status = 'disputed'
+                    signature.save()
+                    
+                    return Response({
+                        'status': 'success',
+                        'dispute_id': str(dispute.id),
+                        'message': 'Signature rejected and dispute created'
+                    })
+                else:
+                    return Response({
+                        'status': 'error',
+                        'message': 'Failed to create dispute'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+            except Signature.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'message': 'Signature not found or unauthorized'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'status': 'error',
+            'message': 'Invalid action'
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @csrf_exempt
@@ -1013,6 +1433,395 @@ def handle_admin_resolve_dispute(user, message):
     return response
 
 
+"""
+API Views for Vendor Onboarding and Dispute Resolution
+"""
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.db.models import Q
+from .models import VendorApplication, VendorDocument, DisputeMessage
+from .serializers import (
+    VendorApplicationSerializer, VendorDocumentSerializer,
+    VendorApplicationListSerializer, VendorDocumentUploadSerializer,
+    DisputeSerializer, DisputeMessageSerializer, DisputeListSerializer,
+    DisputeMessageListSerializer
+)
+from .vendor_onboarding_service import VendorOnboardingService
+from .permissions import IsDisputeParty
+
+
+class VendorApplicationViewSet(viewsets.ModelViewSet):
+    """ViewSet for vendor application management"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['onboard_manager', 'super_admin']:
+            return VendorApplication.objects.all()
+        elif user.role == 'vendor':
+            return VendorApplication.objects.filter(vendor=user)
+        return VendorApplication.objects.none()
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return VendorApplicationListSerializer
+        elif self.action in ['upload_document', 'review']:
+            return VendorDocumentUploadSerializer
+        return VendorApplicationSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(vendor=self.request.user)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVendor])
+    def submit(self, request, pk=None):
+        """Submit vendor application for review"""
+        application = self.get_object()
+
+        if application.vendor != request.user:
+            return Response(
+                {'error': 'Unauthorized'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        result = VendorOnboardingService.submit_application(application.id, request.user)
+        if result['success']:
+            serializer = self.get_serializer(application)
+            return Response(serializer.data)
+        return Response(
+            {'error': result.get('error', 'Submission failed')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, (IsOnboardManager | IsSuperAdmin)])
+    def review(self, request, pk=None):
+        """Review and approve/reject vendor application"""
+        application = self.get_object()
+        reviewer = request.user
+        decision = request.data.get('decision')  # 'approve' or 'reject'
+        notes = request.data.get('notes', '')
+
+        if decision not in ['approve', 'reject']:
+            return Response(
+                {'error': 'Invalid decision. Must be "approve" or "reject"'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = VendorOnboardingService.review_application(
+            application.id, reviewer, decision, notes
+        )
+
+        if result['success']:
+            serializer = self.get_serializer(application)
+            return Response(serializer.data)
+        return Response(
+            {'error': result.get('error', 'Review failed')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVendor])
+    def upload_document(self, request, pk=None):
+        """Upload document for vendor application"""
+        application = self.get_object()
+
+        if application.vendor != request.user:
+            return Response(
+                {'error': 'Unauthorized'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        document_type = request.data.get('document_type')
+        file = request.FILES.get('file')
+
+        if not document_type or not file:
+            return Response(
+                {'error': 'document_type and file are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = VendorOnboardingService.upload_document(
+            application.id, request.user, document_type, file
+        )
+
+        if result['success']:
+            serializer = VendorDocumentSerializer(result['document'])
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            {'error': result.get('error', 'Upload failed')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class VendorDocumentViewSet(viewsets.ModelViewSet):
+    """ViewSet for vendor document management"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = VendorDocumentSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['onboard_manager', 'super_admin']:
+            return VendorDocument.objects.all()
+        elif user.role == 'vendor':
+            return VendorDocument.objects.filter(application__vendor=user)
+        return VendorDocument.objects.none()
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, (IsOnboardManager | IsSuperAdmin)])
+    def verify(self, request, pk=None):
+        """Verify or reject a vendor document"""
+        document = self.get_object()
+        reviewer = request.user
+        is_verified = request.data.get('is_verified', False)
+        rejection_reason = request.data.get('rejection_reason', '')
+
+        result = VendorOnboardingService.verify_document(
+            document.id, reviewer, is_verified, rejection_reason
+        )
+
+        if result['success']:
+            serializer = self.get_serializer(document)
+            return Response(serializer.data)
+        return Response(
+            {'error': result.get('error', 'Verification failed')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class DisputeViewSet(viewsets.ModelViewSet):
+    """ViewSet for dispute management"""
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['ops_manager', 'super_admin']:
+            return Dispute.objects.all()
+        elif user.role == 'vendor':
+            return Dispute.objects.filter(
+                Q(vendor=user) | Q(assigned_mediator=user)
+            )
+        elif user.role == 'customer':
+            return Dispute.objects.filter(
+                Q(customer=user) | Q(assigned_mediator=user)
+            )
+        return Dispute.objects.none()
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return DisputeListSerializer
+        return DisputeSerializer
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsCustomer])
+    def create_dispute(self, request):
+        """Create a new dispute"""
+        booking_id = request.data.get('booking_id')
+        dispute_type = request.data.get('dispute_type')
+        title = request.data.get('title')
+        description = request.data.get('description')
+        evidence = request.data.get('evidence', {})
+
+        if not all([booking_id, dispute_type, title, description]):
+            return Response(
+                {'error': 'booking_id, dispute_type, title, and description are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            booking = Booking.objects.get(id=booking_id, customer=request.user)
+        except Booking.DoesNotExist:
+            return Response(
+                {'error': 'Booking not found or unauthorized'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        dispute = DisputeResolutionService.create_dispute(
+            booking, request.user, dispute_type, title, description, evidence
+        )
+
+        if dispute:
+            serializer = self.get_serializer(dispute)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            {'error': 'Failed to create dispute'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, (IsOpsManager | IsSuperAdmin)])
+    def assign_mediator(self, request, pk=None):
+        """Assign a mediator to a dispute"""
+        dispute = self.get_object()
+        mediator_id = request.data.get('mediator_id')
+
+        if not mediator_id:
+            return Response(
+                {'error': 'mediator_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            mediator = User.objects.get(id=mediator_id, role__in=['ops_manager', 'super_admin'])
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Mediator not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        result = DisputeResolutionService.assign_mediator(dispute.id, mediator)
+        if result['success']:
+            serializer = self.get_serializer(dispute)
+            return Response(serializer.data)
+        return Response(
+            {'error': result.get('error', 'Assignment failed')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsDisputeParty])
+    def resolve(self, request, pk=None):
+        """Resolve a dispute"""
+        dispute = self.get_object()
+        resolution_notes = request.data.get('resolution_notes', '')
+        resolution_amount = request.data.get('resolution_amount')
+        evidence = request.data.get('evidence', {})
+
+        # Check if user can resolve this dispute
+        user = request.user
+        if user != dispute.assigned_mediator and user.role not in ['ops_manager', 'super_admin']:
+            return Response(
+                {'error': 'Unauthorized to resolve this dispute'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        result = DisputeResolutionService.resolve_dispute(
+            dispute.id, user, resolution_notes, resolution_amount, evidence
+        )
+
+        if result:
+            serializer = self.get_serializer(dispute)
+            return Response(serializer.data)
+        return Response(
+            {'error': 'Failed to resolve dispute'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, (IsOpsManager | IsSuperAdmin)])
+    def escalate(self, request, pk=None):
+        """Escalate a dispute"""
+        dispute = self.get_object()
+        escalated_to_id = request.data.get('escalated_to_id')
+        reason = request.data.get('reason', '')
+
+        if not escalated_to_id:
+            return Response(
+                {'error': 'escalated_to_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            escalated_to = User.objects.get(id=escalated_to_id, role__in=['ops_manager', 'super_admin'])
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        result = DisputeResolutionService.escalate_dispute(
+            dispute.id, request.user, escalated_to, reason
+        )
+
+        if result:
+            serializer = self.get_serializer(dispute)
+            return Response(serializer.data)
+        return Response(
+            {'error': 'Failed to escalate dispute'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, IsDisputeParty])
+    def messages(self, request, pk=None):
+        """Get messages for a dispute"""
+        dispute = self.get_object()
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 50))
+
+        result = DisputeResolutionService.get_dispute_messages(
+            dispute.id, request.user, page, page_size
+        )
+
+        if result['success']:
+            serializer = DisputeMessageListSerializer(result['messages'], many=True)
+            return Response({
+                'messages': serializer.data,
+                'total_count': result['total_count'],
+                'page': result['page'],
+                'page_size': result['page_size'],
+                'has_more': result['has_more']
+            })
+        return Response(
+            {'error': result.get('error', 'Failed to get messages')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsDisputeParty])
+    def send_message(self, request, pk=None):
+        """Send a message in a dispute"""
+        dispute = self.get_object()
+        content = request.data.get('content')
+        message_type = request.data.get('message_type', 'text')
+        attachment = request.FILES.get('attachment')
+
+        if not content and not attachment:
+            return Response(
+                {'error': 'content or attachment is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = DisputeResolutionService.send_message(
+            dispute.id, request.user, content, message_type, attachment
+        )
+
+        if result['success']:
+            serializer = DisputeMessageSerializer(result['message'])
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            {'error': result.get('error', 'Failed to send message')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsDisputeParty])
+    def mark_read(self, request, pk=None):
+        """Mark messages as read"""
+        dispute = self.get_object()
+
+        result = DisputeResolutionService.mark_messages_read(dispute.id, request.user)
+
+        if result['success']:
+            return Response({
+                'marked_count': result['marked_count']
+            })
+        return Response(
+            {'error': result.get('error', 'Failed to mark messages as read')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, (IsOpsManager | IsSuperAdmin)])
+def dispute_analytics(request):
+    """Get dispute analytics"""
+    date_range_days = int(request.query_params.get('days', 30))
+
+    analytics = DisputeResolutionService.get_dispute_analytics(date_range_days)
+    return Response(analytics)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, (IsOnboardManager | IsSuperAdmin)])
+def vendor_onboarding_analytics(request):
+    """Get vendor onboarding analytics"""
+    analytics = VendorOnboardingService.get_onboarding_analytics()
+    return Response(analytics)
+
+
 def generate_ai_response(message, role):
     """Generate AI-like response for general queries"""
     # This is a simple rule-based response generator
@@ -1041,3 +1850,280 @@ def generate_ai_response(message, role):
     }
     
     return f"I understand you're asking about '{message}'. {role_prompts.get(role, 'I can help with various tasks in the system.')}"
+
+
+class AddressViewSet(viewsets.ModelViewSet):
+    queryset = Address.objects.all()
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['is_default']
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'customer':
+            return Address.objects.filter(user=user)
+        elif user.role in ['ops_manager', 'super_admin']:
+            return Address.objects.all()
+        return Address.objects.none()
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+    
+    def perform_update(self, serializer):
+        serializer.save()
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsCustomer])
+    def set_default(self, request, pk=None):
+        """Set this address as the default address"""
+        address = self.get_object()
+        if address.user != request.user:
+            return Response(
+                {'error': 'Permission denied'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Set this address as default
+        address.is_default = True
+        address.save()
+        
+        # Unset other addresses as default
+        Address.objects.filter(user=request.user, is_default=True).exclude(id=address.id).update(is_default=False)
+        
+        return Response({'message': 'Default address updated successfully'})
+
+
+class EarningsViewSet(viewsets.ModelViewSet):
+    queryset = Earnings.objects.all()
+    serializer_class = EarningsSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status', 'vendor']
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'vendor':
+            return Earnings.objects.filter(vendor=user)
+        elif user.role in ['ops_manager', 'super_admin']:
+            return Earnings.objects.all()
+        return Earnings.objects.none()
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsOpsManager | IsSuperAdmin])
+    def release_payment(self, request, pk=None):
+        """Release payment to vendor"""
+        earning = self.get_object()
+        
+        # Update earning status
+        earning.status = 'released'
+        earning.processed_by = request.user
+        earning.processed_at = timezone.now()
+        earning.save()
+        
+        # Update booking payment status
+        if hasattr(earning.booking, 'payment'):
+            earning.booking.payment.status = 'completed'
+            earning.booking.payment.processed_by = request.user
+            earning.booking.payment.processed_at = timezone.now()
+            earning.booking.payment.save()
+        
+        # Log the action
+        AuditLogger.log_action(
+            user=request.user,
+            action='payment_process',
+            resource_type='Earnings',
+            resource_id=earning.id,
+            new_values={'status': 'released'}
+        )
+        
+        return Response({
+            'message': 'Payment released successfully',
+            'earning_id': earning.id
+        })
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsVendor])
+    def summary(self, request):
+        """Get earnings summary for vendor"""
+        vendor = request.user
+        
+        # Calculate total earnings
+        from django.db.models import Sum
+        total_earnings = Earnings.objects.filter(
+            vendor=vendor, 
+            status='released'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Calculate pending earnings
+        pending_earnings = Earnings.objects.filter(
+            vendor=vendor, 
+            status='pending'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        # Get recent earnings
+        recent_earnings = Earnings.objects.filter(vendor=vendor)[:5]
+        
+        serializer = EarningsSerializer(recent_earnings, many=True)
+        
+        return Response({
+            'total_earnings': float(total_earnings),
+            'pending_earnings': float(pending_earnings),
+            'recent_earnings': serializer.data
+        })
+
+
+class PerformanceMetricsViewSet(viewsets.ModelViewSet):
+    queryset = PerformanceMetrics.objects.all()
+    serializer_class = PerformanceMetricsSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['tier', 'vendor']
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'vendor':
+            return PerformanceMetrics.objects.filter(vendor=user)
+        elif user.role in ['ops_manager', 'super_admin']:
+            return PerformanceMetrics.objects.all()
+        return PerformanceMetrics.objects.none()
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsVendor])
+    def summary(self, request):
+        """Get performance summary for vendor"""
+        vendor = request.user
+        
+        # Get or create performance metrics
+        metrics, created = PerformanceMetrics.objects.get_or_create(vendor=vendor)
+        
+        serializer = PerformanceMetricsSerializer(metrics)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsOpsManager | IsSuperAdmin])
+    def calculate_all(self, request):
+        """Calculate performance metrics for all vendors"""
+        # This would be called by a cron job or manually
+        vendors = User.objects.filter(role='vendor')
+        
+        for vendor in vendors:
+            # Get or create performance metrics
+            metrics, created = PerformanceMetrics.objects.get_or_create(vendor=vendor)
+            
+            # Recalculate bonus points
+            metrics.calculate_bonus_points()
+            metrics.save()
+        
+        return Response({
+            'message': f'Performance metrics calculated for {vendors.count()} vendors'
+        })
+
+
+class VendorSearchAPIView(APIView):
+    """Search vendors by pincode with availability and ratings"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Search vendors by pincode"""
+        pincode = request.query_params.get('pincode')
+        service_id = request.query_params.get('service_id')
+        
+        if not pincode:
+            return Response(
+                {'error': 'Pincode parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get available vendors in the pincode
+            vendors = User.objects.filter(
+                role='vendor',
+                pincode=pincode,
+                is_available=True,
+                is_verified=True,
+                is_active=True
+            )
+            
+            # Filter by service if provided
+            if service_id:
+                vendors = vendors.filter(services__id=service_id)
+            
+            # Get vendor availability and ratings
+            vendor_data = []
+            for vendor in vendors:
+                # Get vendor availability
+                availability = VendorAvailability.objects.filter(
+                    vendor=vendor,
+                    is_active=True
+                ).first()
+                
+                # Get vendor rating (mock for now, would be from completed bookings)
+                # In a real implementation, this would be calculated from signature ratings
+                rating = 4.5  # Mock rating
+                
+                # Get travel time from vendor's location to customer
+                customer_pincode = request.user.pincode
+                travel_data = {}
+                if customer_pincode:
+                    try:
+                        travel_data = travel_service.get_travel_time(
+                            vendor.pincode or (availability.primary_pincode if availability else pincode),
+                            customer_pincode
+                        )
+                    except:
+                        travel_data = {'duration_minutes': 30, 'distance_km': 10}
+                
+                vendor_data.append({
+                    'id': vendor.id,
+                    'name': vendor.get_full_name(),
+                    'email': vendor.email,
+                    'phone': vendor.phone,
+                    'pincode': vendor.pincode,
+                    'rating': rating,
+                    'total_jobs': 25,  # Mock data
+                    'availability': {
+                        'day_of_week': availability.day_of_week if availability else None,
+                        'start_time': availability.start_time if availability else None,
+                        'end_time': availability.end_time if availability else None,
+                    } if availability else None,
+                    'travel_time': travel_data.get('duration_minutes', 30),
+                    'distance_km': travel_data.get('distance_km', 10),
+                    'primary_service_area': availability.primary_pincode if availability else pincode
+                })
+            
+            # Sort by rating and travel time
+            vendor_data.sort(key=lambda x: (-x['rating'], x['travel_time']))
+            
+            return Response({
+                'vendors': vendor_data,
+                'total_vendors': len(vendor_data),
+                'pincode': pincode,
+                'demand_index': self._calculate_demand_index(pincode)
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _calculate_demand_index(self, pincode):
+        """Calculate demand index for a pincode"""
+        try:
+            from datetime import timedelta
+            
+            # Get analytics for the last 7 days
+            week_ago = timezone.now().date() - timedelta(days=7)
+            analytics = PincodeAnalytics.objects.filter(
+                pincode=pincode,
+                date__gte=week_ago
+            )
+            
+            if analytics.exists():
+                total_bookings = sum(a.total_bookings for a in analytics)
+                available_vendors = sum(a.available_vendors for a in analytics) / len(analytics)
+                
+                if available_vendors > 0:
+                    demand_ratio = total_bookings / available_vendors
+                    # Normalize to 0-10 scale
+                    return min(10, round(demand_ratio, 1))
+            
+            return 5  # Neutral demand index
+        except:
+            return 5  # Default demand index

@@ -11,6 +11,8 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import uuid
+import base64
+import tempfile
 
 # Configuration
 BASE_URL = 'http://127.0.0.1:8000'
@@ -219,7 +221,10 @@ class HomeServeTester:
             else:
                 self.log(f"✗ Booking completion failed: {response.text}", "ERROR")
 
-            # Step 4: Vendor requests signature
+            # Step 4: Vendor uploads before/after photos
+            self.test_photo_management()
+
+            # Step 5: Vendor requests signature
             response = self.make_request('POST', f'/api/bookings/{booking_id}/request_signature/', vendor_token)
             if response.status_code == 200:
                 self.log("✓ Signature requested")
@@ -228,7 +233,7 @@ class HomeServeTester:
             else:
                 self.log(f"✗ Signature request failed: {response.text}", "ERROR")
 
-            # Step 5: Customer signs booking
+            # Step 6: Customer signs booking
             if self.test_data.get('signature_id'):
                 signature_data = {
                     'satisfaction_rating': 5,
@@ -252,9 +257,6 @@ class HomeServeTester:
             return
 
         # Create a dummy image file for testing
-        import tempfile
-        import base64
-
         # Create a small test image (1x1 pixel PNG in base64)
         test_image_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
         test_image_data = base64.b64decode(test_image_b64)
@@ -265,21 +267,37 @@ class HomeServeTester:
             temp_file_path = temp_file.name
 
         try:
-            # Upload photo
+            # Upload before photo
             with open(temp_file_path, 'rb') as f:
-                files = {'image': ('test_image.png', f, 'image/png')}
+                files = {'image': ('test_image_before.png', f, 'image/png')}
                 data = {
                     'booking': str(self.test_data['test_booking']['id']),
                     'image_type': 'before',
-                    'description': 'Test photo upload'
+                    'description': 'Test before photo upload'
                 }
 
                 response = self.make_request('POST', '/api/photos/', vendor_token, data, files)
                 if response.status_code == 201:
-                    self.log("✓ Photo uploaded successfully")
-                    self.test_data['test_photo'] = response.json()
+                    self.log("✓ Before photo uploaded successfully")
+                    self.test_data['test_photo_before'] = response.json()
                 else:
-                    self.log(f"✗ Photo upload failed: {response.text}", "ERROR")
+                    self.log(f"✗ Before photo upload failed: {response.text}", "ERROR")
+
+            # Upload after photo
+            with open(temp_file_path, 'rb') as f:
+                files = {'image': ('test_image_after.png', f, 'image/png')}
+                data = {
+                    'booking': str(self.test_data['test_booking']['id']),
+                    'image_type': 'after',
+                    'description': 'Test after photo upload'
+                }
+
+                response = self.make_request('POST', '/api/photos/', vendor_token, data, files)
+                if response.status_code == 201:
+                    self.log("✓ After photo uploaded successfully")
+                    self.test_data['test_photo_after'] = response.json()
+                else:
+                    self.log(f"✗ After photo upload failed: {response.text}", "ERROR")
 
         finally:
             # Clean up temp file
@@ -386,16 +404,17 @@ class HomeServeTester:
             self.log(f"Price predictions: {response.status_code}")
 
         # Test smart scheduling (GET)
-        if vendor_token:
+        if vendor_token and self.test_data.get('services'):
+            service_id = self.test_data['services'][0]['id']
             response = self.make_request('GET',
-                '/api/smart-scheduling/?vendor_id=1&service_id=1&customer_pincode=110001&preferred_date=2024-01-15',
+                f'/api/smart-scheduling/?vendor_id=1&service_id={service_id}&customer_pincode=110001&preferred_date=2024-01-15',
                 customer_token)
             self.log(f"Smart scheduling GET: {response.status_code}")
 
             # Test smart scheduling (POST)
             schedule_data = {
                 'vendor_id': 1,
-                'service_id': 1,
+                'service_id': service_id,
                 'customer_pincode': '110001',
                 'preferred_date': '2024-01-15'
             }
@@ -407,21 +426,152 @@ class HomeServeTester:
             response = self.make_request('GET', '/api/vendor-optimization/?date=2024-01-15', vendor_token)
             self.log(f"Vendor optimization: {response.status_code}")
 
+    def test_dispute_workflow(self):
+        """Test dispute resolution workflow"""
+        self.log("🧪 Testing Dispute Resolution Workflow", "HEADER")
+
+        customer_token = self.tokens.get('customer')
+        vendor_token = self.tokens.get('vendor')
+        ops_token = self.tokens.get('ops_mgr')
+
+        if not customer_token or not ops_token:
+            self.log("Missing tokens for dispute workflow", "ERROR")
+            return
+
+        # Create a test booking first if not exists
+        if not self.test_data.get('test_booking'):
+            self.log("Creating test booking for dispute testing...")
+            self._create_test_booking_for_dispute()
+
+        if self.test_data.get('test_booking'):
+            booking_id = self.test_data['test_booking']['id']
+            
+            # Customer creates dispute
+            dispute_data = {
+                'booking_id': booking_id,
+                'dispute_type': 'service_quality',
+                'title': 'Poor Service Quality',
+                'description': 'Service was not as expected',
+                'evidence': {'photos': [], 'notes': 'Service quality was poor'}
+            }
+            
+            response = self.make_request('POST', '/api/disputes/create_dispute/', customer_token, dispute_data)
+            if response.status_code == 201:
+                dispute = response.json()
+                self.log("✓ Dispute created successfully")
+                self.test_data['test_dispute'] = dispute
+                dispute_id = dispute['id']
+            else:
+                self.log(f"✗ Dispute creation failed: {response.text}", "ERROR")
+                return
+
+            # Vendor adds response to dispute
+            if vendor_token and self.test_data.get('test_dispute'):
+                vendor_response_data = {
+                    'evidence': {'photos': [], 'notes': 'Customer expectations were met'},
+                    'response_notes': 'Service was completed as per standards'
+                }
+                
+                response = self.make_request('POST', 
+                    f'/api/disputes/{dispute_id}/add_vendor_response/', vendor_token, vendor_response_data)
+                if response.status_code == 200:
+                    self.log("✓ Vendor response added to dispute")
+                else:
+                    self.log(f"✗ Vendor response failed: {response.text}", "ERROR")
+
+            # Ops manager resolves dispute
+            if ops_token and self.test_data.get('test_dispute'):
+                resolution_data = {
+                    'resolution_notes': 'Investigation completed. Partial refund approved.',
+                    'resolution_amount': '50.00',
+                    'evidence': {'notes': 'Investigation findings attached'}
+                }
+                
+                response = self.make_request('POST', 
+                    f'/api/disputes/{dispute_id}/resolve/', ops_token, resolution_data)
+                if response.status_code == 200:
+                    self.log("✓ Dispute resolved by ops manager")
+                else:
+                    self.log(f"✗ Dispute resolution failed: {response.text}", "ERROR")
+
+    def _create_test_booking_for_dispute(self):
+        """Helper method to create a booking for dispute testing"""
+        customer_token = self.tokens.get('customer')
+        vendor_token = self.tokens.get('vendor')
+        
+        if not customer_token or not vendor_token:
+            return
+
+        # Create booking
+        if self.test_data.get('services'):
+            service = self.test_data['services'][0]
+            booking_data = {
+                'service': service['id'],
+                'pincode': '110001',
+                'scheduled_date': (datetime.now() + timedelta(days=2)).isoformat(),
+                'customer_notes': 'Test booking for dispute testing'
+            }
+
+            response = self.make_request('POST', '/api/bookings/', customer_token, booking_data)
+            if response.status_code == 201:
+                booking = response.json()
+                self.test_data['test_booking'] = booking
+                
+                # Accept booking
+                response = self.make_request('POST', f'/api/bookings/{booking["id"]}/accept_booking/', vendor_token)
+                if response.status_code == 200:
+                    # Complete booking
+                    response = self.make_request('POST', f'/api/bookings/{booking["id"]}/complete_booking/', vendor_token)
+                    if response.status_code == 200:
+                        self.log("✓ Test booking created for dispute testing")
+            else:
+                self.log(f"✗ Failed to create test booking: {response.text}", "ERROR")
+
+    def test_vendor_onboarding(self):
+        """Test vendor onboarding workflow"""
+        self.log("🧪 Testing Vendor Onboarding Workflow", "HEADER")
+
+        onboard_token = self.tokens.get('onboard_mgr')
+        vendor_token = self.tokens.get('vendor')
+
+        if not onboard_token:
+            self.log("No onboard manager token available", "ERROR")
+            return
+
+        # Get vendor applications
+        response = self.make_request('GET', '/api/vendor-applications/', onboard_token)
+        if response.status_code == 200:
+            applications = response.json()
+            self.log(f"✓ Retrieved {len(applications.get('results', []))} vendor applications")
+        else:
+            self.log(f"✗ Failed to get vendor applications: {response.text}", "ERROR")
+
+        # Get vendor documents
+        response = self.make_request('GET', '/api/vendor-documents/', onboard_token)
+        if response.status_code == 200:
+            documents = response.json()
+            self.log(f"✓ Retrieved {len(documents.get('results', []))} vendor documents")
+        else:
+            self.log(f"✗ Failed to get vendor documents: {response.text}", "ERROR")
+
     def test_admin_endpoints(self):
         """Test admin-only endpoints"""
         self.log("🧪 Testing Admin Endpoints", "HEADER")
 
         admin_token = self.tokens.get('admin')
-        if not admin_token:
-            self.log("No admin token available", "ERROR")
+        ops_token = self.tokens.get('ops_mgr')
+        if not admin_token and not ops_token:
+            self.log("No admin or ops manager token available", "ERROR")
             return
 
+        token = admin_token or ops_token
+
         # Test audit logs
-        response = self.make_request('GET', '/api/audit-logs/', admin_token)
+        response = self.make_request('GET', '/api/audit-logs/', token)
         self.log(f"Audit logs: {response.status_code}")
 
         # Test cache management
-        response = self.make_request('GET', '/admin-dashboard/cache/', admin_token)
+        response = self.make_request('GET', '/admin-dashboard/cache/', token)
         if response.status_code == 200:
             self.log("✓ Cache stats retrieved")
         else:
@@ -429,35 +579,105 @@ class HomeServeTester:
 
         # Test cache clearing
         cache_data = {'cache_type': 'default'}
-        response = self.make_request('POST', '/admin-dashboard/cache/', admin_token, cache_data)
+        response = self.make_request('POST', '/admin-dashboard/cache/', token, cache_data)
         self.log(f"Cache clearing: {response.status_code}")
 
         # Test pincode scaling
-        response = self.make_request('GET', '/admin-dashboard/pincode-scaling/', admin_token)
+        response = self.make_request('GET', '/admin-dashboard/pincode-scaling/', token)
         self.log(f"Pincode scaling: {response.status_code}")
 
         # Test dashboard stats
-        response = self.make_request('GET', '/admin-dashboard/dashboard/stats/', admin_token)
+        response = self.make_request('GET', '/admin-dashboard/dashboard/stats/', token)
         if response.status_code == 200:
             self.log("✓ Dashboard stats retrieved")
         else:
             self.log(f"✗ Dashboard stats failed: {response.text}", "ERROR")
 
         # Test notification management
-        response = self.make_request('GET', '/admin-dashboard/notifications/', admin_token)
+        response = self.make_request('GET', '/admin-dashboard/notifications/', token)
         self.log(f"Notification management: {response.status_code}")
 
         # Test notification logs
-        response = self.make_request('GET', '/admin-dashboard/notifications/logs/', admin_token)
+        response = self.make_request('GET', '/admin-dashboard/notifications/logs/', token)
         self.log(f"Notification logs: {response.status_code}")
 
         # Test business alerts
-        response = self.make_request('GET', '/admin-dashboard/notifications/alerts/', admin_token)
+        response = self.make_request('GET', '/admin-dashboard/notifications/alerts/', token)
         self.log(f"Business alerts: {response.status_code}")
 
         # Test pincode analytics
-        response = self.make_request('GET', '/admin-dashboard/analytics/pincode/', admin_token)
+        response = self.make_request('GET', '/admin-dashboard/analytics/pincode/', token)
         self.log(f"Pincode analytics: {response.status_code}")
+
+    def test_chatbot_functionality(self):
+        """Test chatbot and AI assistant functionality"""
+        self.log("🧪 Testing Chatbot Functionality", "HEADER")
+
+        customer_token = self.tokens.get('customer')
+        vendor_token = self.tokens.get('vendor')
+        admin_token = self.tokens.get('admin')
+
+        # Test customer chat query
+        if customer_token:
+            chat_data = {
+                'user_id': '1',  # Would be actual user ID
+                'role': 'customer',
+                'message': 'track my bookings'
+            }
+            response = self.make_request('POST', '/api/chat/query/', customer_token, chat_data)
+            self.log(f"Customer chat query: {response.status_code}")
+
+            # Test customer chat context
+            response = self.make_request('GET', '/api/chat/context/?user_id=1&role=customer', customer_token)
+            self.log(f"Customer chat context: {response.status_code}")
+
+        # Test vendor chat query
+        if vendor_token:
+            chat_data = {
+                'user_id': '2',  # Would be actual user ID
+                'role': 'vendor',
+                'message': 'my pending jobs'
+            }
+            response = self.make_request('POST', '/api/chat/query/', vendor_token, chat_data)
+            self.log(f"Vendor chat query: {response.status_code}")
+
+        # Test admin chat query
+        if admin_token:
+            chat_data = {
+                'user_id': '3',  # Would be actual user ID
+                'role': 'admin',
+                'message': 'monitor signatures'
+            }
+            response = self.make_request('POST', '/api/chat/query/', admin_token, chat_data)
+            self.log(f"Admin chat query: {response.status_code}")
+
+    def test_analytics_and_reporting(self):
+        """Test analytics and reporting endpoints"""
+        self.log("🧪 Testing Analytics and Reporting", "HEADER")
+
+        ops_token = self.tokens.get('ops_mgr')
+        admin_token = self.tokens.get('admin')
+        token = ops_token or admin_token
+
+        if not token:
+            self.log("No ops manager or admin token available", "ERROR")
+            return
+
+        # Test dispute analytics
+        response = self.make_request('GET', '/api/analytics/disputes/?days=30', token)
+        self.log(f"Dispute analytics: {response.status_code}")
+
+        # Test vendor onboarding analytics
+        response = self.make_request('GET', '/api/analytics/vendor-onboarding/', token)
+        self.log(f"Vendor onboarding analytics: {response.status_code}")
+
+        # Test vendor bonuses
+        response = self.make_request('GET', '/api/vendor-bonuses/?vendor_id=1', token)
+        self.log(f"Vendor bonuses: {response.status_code}")
+
+        # Test vendor AI analytics
+        response = self.make_request('GET', '/api/vendor-ai-analytics/?vendor_id=1&days=30', token)
+        self.log(f"Vendor AI analytics: {response.status_code}")
 
     def test_error_handling(self):
         """Test error handling and edge cases"""
@@ -495,15 +715,26 @@ class HomeServeTester:
             self.test_user_management()
             self.test_service_management()
             self.test_booking_workflow()
-            self.test_photo_management()
             self.test_payment_management()
             self.test_vendor_availability()
 
             # Smart features
             self.test_smart_scheduling()
 
+            # Dispute workflow
+            self.test_dispute_workflow()
+
+            # Vendor onboarding
+            self.test_vendor_onboarding()
+
             # Admin features
             self.test_admin_endpoints()
+
+            # Chatbot functionality
+            self.test_chatbot_functionality()
+
+            # Analytics and reporting
+            self.test_analytics_and_reporting()
 
             # Error handling
             self.test_error_handling()
@@ -522,8 +753,9 @@ class HomeServeTester:
         self.log(f"   • Authenticated users: {len(self.tokens)}")
         self.log(f"   • Services tested: {len(self.test_data.get('services', []))}")
         self.log(f"   • Bookings created: {1 if self.test_data.get('test_booking') else 0}")
-        self.log(f"   • Photos uploaded: {1 if self.test_data.get('test_photo') else 0}")
+        self.log(f"   • Photos uploaded: {2 if self.test_data.get('test_photo_before') and self.test_data.get('test_photo_after') else 0}")
         self.log(f"   • Signatures processed: {1 if self.test_data.get('signature_id') else 0}")
+        self.log(f"   • Disputes created: {1 if self.test_data.get('test_dispute') else 0}")
 
         self.log("\n🎯 All endpoints tested successfully!", "SUCCESS")
 

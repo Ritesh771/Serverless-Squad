@@ -106,8 +106,11 @@ class SmartSchedulingService:
         travel_time = travel_data['duration_minutes']
         buffer_time = availability.preferred_buffer_minutes
         
+        # Adjust buffer time based on traffic conditions
+        adjusted_buffer_time = self._adjust_buffer_for_traffic(buffer_time, travel_data)
+        
         # Total time needed for this booking (travel + buffer + service + buffer + travel back)
-        total_time_needed = travel_time + buffer_time + service_duration + buffer_time + travel_time
+        total_time_needed = travel_time + adjusted_buffer_time + service_duration + adjusted_buffer_time + travel_time
         
         # Start checking from the beginning of the window
         current_time = window_start
@@ -119,7 +122,7 @@ class SmartSchedulingService:
             
             # Calculate when vendor will be free after this booking
             booking_end_time = current_time + timedelta(minutes=service_duration)
-            vendor_free_time = booking_end_time + timedelta(minutes=buffer_time + travel_time)
+            vendor_free_time = booking_end_time + timedelta(minutes=adjusted_buffer_time + travel_time)
             
             # Check if this slot conflicts with existing bookings
             conflicts = self._check_conflicts(
@@ -145,13 +148,14 @@ class SmartSchedulingService:
                     'vendor_free_time': vendor_free_time,
                     'service_duration_minutes': service_duration,
                     'travel_time_minutes': travel_time,
-                    'buffer_before_minutes': buffer_time,
-                    'buffer_after_minutes': buffer_time,
+                    'buffer_before_minutes': adjusted_buffer_time,
+                    'buffer_after_minutes': adjusted_buffer_time,
                     'total_duration_minutes': total_time_needed,
                     'travel_data': travel_data,
                     'next_travel_time_minutes': next_travel_time,
                     'confidence_score': travel_data.get('confidence_score', 1.0),
-                    'source': travel_data.get('source', 'estimated')
+                    'source': travel_data.get('source', 'estimated'),
+                    'traffic_adjusted': adjusted_buffer_time != buffer_time
                 }
                 
                 slots.append(slot_info)
@@ -160,6 +164,33 @@ class SmartSchedulingService:
             current_time += timedelta(minutes=slot_duration_minutes)
         
         return slots
+    
+    def _adjust_buffer_for_traffic(self, base_buffer: int, travel_data: Dict) -> int:
+        """
+        Adjust buffer time based on traffic conditions and confidence score
+        """
+        # Get traffic multiplier based on data source and confidence
+        confidence = travel_data.get('confidence_score', 0.5)
+        source = travel_data.get('source', 'estimated')
+        
+        # Traffic multipliers
+        traffic_multiplier = 1.0
+        
+        # Higher multiplier for real-time traffic data
+        if source == 'api' and 'duration_in_traffic_minutes' in travel_data:
+            normal_duration = travel_data['duration_minutes']
+            traffic_duration = travel_data['duration_in_traffic_minutes']
+            if normal_duration > 0:
+                traffic_multiplier = max(1.0, traffic_duration / normal_duration)
+        
+        # Adjust based on confidence (lower confidence = more buffer)
+        confidence_multiplier = 1.0 + (1.0 - confidence)  # Add 0-100% more buffer for low confidence
+        
+        # Calculate adjusted buffer
+        adjusted_buffer = int(base_buffer * traffic_multiplier * confidence_multiplier)
+        
+        # Ensure minimum buffer
+        return max(self.min_break_between_bookings, adjusted_buffer)
     
     def _check_conflicts(self, existing_bookings, start_time: datetime, end_time: datetime) -> bool:
         """Check if proposed time conflicts with existing bookings"""
@@ -348,7 +379,78 @@ class SmartSchedulingService:
         elif hour >= 18:  # Evening
             score -= 5
         
+        # Prefer non-traffic-adjusted slots (more predictable)
+        if not slot.get('traffic_adjusted', False):
+            score += 5
+            
         return max(0, min(100, score))
+    
+    def reschedule_booking_for_eta_change(self, booking: Booking, new_eta_minutes: int) -> Dict:
+        """
+        Reschedule a booking when ETA changes significantly
+        """
+        try:
+            # Calculate the difference
+            current_travel_time = booking.travel_time_to_location_minutes or 0
+            time_difference = new_eta_minutes - current_travel_time
+            
+            # Only reschedule if difference is significant (more than 30 minutes)
+            if abs(time_difference) < 30:
+                return {
+                    'action': 'no_change',
+                    'message': 'ETA change is minimal, no rescheduling needed'
+                }
+            
+            # Get vendor availability
+            vendor = booking.vendor
+            if not vendor:
+                return {
+                    'action': 'error',
+                    'message': 'No vendor assigned to this booking'
+                }
+            
+            # Get vendor availability for the current day
+            day_name = booking.scheduled_date.strftime('%A').lower()
+            availability = VendorAvailability.objects.filter(
+                vendor=vendor,
+                day_of_week=day_name,
+                is_active=True
+            ).first()
+            
+            if not availability:
+                return {
+                    'action': 'error',
+                    'message': 'No availability found for vendor on this day'
+                }
+            
+            # Calculate new time slot
+            if time_difference > 0:  # Delay - move booking later
+                new_scheduled_time = booking.scheduled_date + timedelta(minutes=time_difference)
+            else:  # Early - can potentially move booking earlier
+                new_scheduled_time = max(
+                    booking.scheduled_date + timedelta(minutes=time_difference),
+                    booking.actual_start_time or booking.scheduled_date
+                )
+            
+            # Update booking with new scheduled time
+            booking.scheduled_date = new_scheduled_time
+            booking.travel_time_to_location_minutes = new_eta_minutes
+            booking.update_calculated_times()
+            booking.save()
+            
+            return {
+                'action': 'rescheduled',
+                'message': f'Booking rescheduled due to ETA change of {time_difference} minutes',
+                'new_scheduled_time': new_scheduled_time,
+                'new_travel_time': new_eta_minutes
+            }
+            
+        except Exception as e:
+            logger.error(f"Error rescheduling booking {booking.id}: {str(e)}")
+            return {
+                'action': 'error',
+                'message': f'Failed to reschedule booking: {str(e)}'
+            }
 
 
 # Singleton instance

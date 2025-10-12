@@ -257,6 +257,11 @@ TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
 TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
 TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default='')
 
+# OTP Configuration
+OTP_METHOD = config('OTP_METHOD', default='email')  # 'email' or 'sms'
+OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=5, cast=int)
+OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
+
 # Logging Configuration
 LOGGING = {
     'version': 1,
