@@ -4,6 +4,7 @@ export const ENDPOINTS = {
   // Auth Endpoints
   AUTH: {
     LOGIN: '/auth/login/',
+    REGISTER: '/auth/register/',
     REFRESH: '/auth/refresh/',
     SEND_OTP: '/auth/send-otp/',
     VERIFY_OTP: '/auth/verify-otp/',
@@ -137,5 +138,7 @@ export const ENDPOINTS = {
   // Chat/AI Assistant
   CHAT: {
     MESSAGE: '/api/chat/',
+    QUERY: '/api/chat/query/',
+    CONTEXT: '/api/chat/context/',
   },
 };

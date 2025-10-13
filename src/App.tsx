@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { WebSocketProvider } from "@/context/WebSocketContext";
 import { Sidebar } from "@/components/Sidebar";
 import { Navbar } from "@/components/Navbar";
 import { ChatBot } from "@/components/ChatBot";
@@ -154,7 +155,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <WebSocketProvider>
+            <AppRoutes />
+          </WebSocketProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

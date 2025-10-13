@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:backend": "daphne -b 0.0.0.0 -p 8000 homeserve_pro.asgi:application",
+    "dev:full": "npm run dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

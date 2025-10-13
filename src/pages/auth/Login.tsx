@@ -9,7 +9,7 @@ import { Home, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -19,7 +19,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      await login(username, password);
       toast.success('Login successful!');
     } catch (error) {
       toast.error('Login failed. Please check your credentials.');
@@ -30,7 +30,7 @@ export default function Login() {
 
   // Quick login buttons for demo
   const quickLogin = (role: string) => {
-    setEmail(`${role}@homeserve.com`);
+    setUsername(role);
     setPassword('demo123');
   };
 
@@ -49,13 +49,13 @@ export default function Login() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="username">Username or Email</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                type="text"
+                placeholder="username or email"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
               />
             </div>

@@ -99,7 +99,7 @@ export const ChatBot = () => {
 
   const loadContext = async () => {
     try {
-      const response = await api.get(`${ENDPOINTS.CHAT}/context/`, {
+      const response = await api.get(ENDPOINTS.CHAT.CONTEXT, {
         params: {
           user_id: user?.id,
           role: user?.role
@@ -109,6 +109,7 @@ export const ChatBot = () => {
       setContext(response.data.context);
     } catch (error) {
       console.error('Failed to load chat context:', error);
+      // Continue without context - not critical
     }
   };
 
@@ -124,7 +125,11 @@ export const ChatBot = () => {
       }
       
       // Create new WebSocket connection
-      const wsUrl = `ws://localhost:8000/ws/chat/${user.id}/${user.role}/`;
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const backendHost = window.location.hostname;
+      const backendPort = '8000'; // Django backend port
+      const wsUrl = `${wsProtocol}//${backendHost}:${backendPort}/ws/chat/${user.id}/${user.role}/`;
+      
       console.log('Connecting to WebSocket:', wsUrl);
       ws.current = new WebSocket(wsUrl);
       
@@ -132,10 +137,10 @@ export const ChatBot = () => {
         console.log('WebSocket connected');
         setIsConnecting(false);
         
-        // Add connection message
+        // Add connection message only if WebSocket successfully connects
         addMessage({
           id: Date.now().toString(),
-          text: 'Connected to support chat',
+          text: 'Connected to real-time chat',
           sender: 'bot',
           timestamp: new Date(),
           type: 'notification'
@@ -154,36 +159,19 @@ export const ChatBot = () => {
       ws.current.onclose = (event) => {
         console.log('WebSocket disconnected', event);
         setIsConnecting(false);
-        addMessage({
-          id: Date.now().toString(),
-          text: 'Chat connection lost. Using fallback mode.',
-          sender: 'bot',
-          timestamp: new Date(),
-          type: 'notification'
-        });
+        // Don't show error message if chat WebSocket is not available
+        // This is an optional feature
       };
       
       ws.current.onerror = (error) => {
         console.error('WebSocket error:', error);
         setIsConnecting(false);
-        addMessage({
-          id: Date.now().toString(),
-          text: 'Real-time chat unavailable. Using message mode.',
-          sender: 'bot',
-          timestamp: new Date(),
-          type: 'notification'
-        });
+        // WebSocket chat is optional - fallback to HTTP API
       };
     } catch (error) {
       console.error('Failed to connect WebSocket:', error);
       setIsConnecting(false);
-      addMessage({
-        id: Date.now().toString(),
-        text: 'Chat service unavailable. You can still send messages.',
-        sender: 'bot',
-        timestamp: new Date(),
-        type: 'notification'
-      });
+      // WebSocket is optional - will use HTTP fallback
     }
   };
 
@@ -280,7 +268,7 @@ export const ChatBot = () => {
       } else {
         // Fallback to HTTP API
         console.log('Using HTTP API fallback');
-        const response = await api.post(`${ENDPOINTS.CHAT}/query/`, {
+        const response = await api.post(ENDPOINTS.CHAT.QUERY, {
           user_id: user.id,
           role: user.role,
           message: input

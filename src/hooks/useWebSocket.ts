@@ -12,9 +12,19 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 3; // Limit reconnection attempts
+  const reconnectDelay = 5000; // 5 seconds
 
   const connect = useCallback(() => {
     if (!user) return;
+
+    // Check if we've exceeded max reconnection attempts
+    if (reconnectAttempts.current >= maxReconnectAttempts) {
+      console.log(`WebSocket: Max reconnection attempts (${maxReconnectAttempts}) reached. Stopping reconnection.`);
+      setIsConnecting(false);
+      return;
+    }
 
     // Clear any existing reconnection attempts
     if (reconnectTimeout.current) {
@@ -31,14 +41,20 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
       }
 
       // Create new WebSocket connection
-      const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/status/${user.id}/${user.role}/`;
+      // Backend is on port 8000, frontend on 8080
+      const backendHost = window.location.hostname;
+      const backendPort = '8000'; // Django backend port
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${backendHost}:${backendPort}/ws/status/${user.id}/${user.role}/`;
+      
       console.log('Connecting to WebSocket:', wsUrl);
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected successfully');
         setIsConnected(true);
         setIsConnecting(false);
+        reconnectAttempts.current = 0; // Reset attempts on successful connection
       };
 
       ws.current.onmessage = (event) => {
@@ -55,12 +71,17 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
         setIsConnected(false);
         setIsConnecting(false);
 
-        // Attempt to reconnect after 5 seconds
-        if (!reconnectTimeout.current) {
+        // Only attempt to reconnect if we haven't exceeded max attempts
+        if (reconnectAttempts.current < maxReconnectAttempts && !reconnectTimeout.current) {
+          reconnectAttempts.current += 1;
+          console.log(`Attempting to reconnect (${reconnectAttempts.current}/${maxReconnectAttempts}) in ${reconnectDelay/1000}s...`);
+          
           reconnectTimeout.current = setTimeout(() => {
-            console.log('Attempting to reconnect WebSocket...');
+            reconnectTimeout.current = null;
             connect();
-          }, 5000);
+          }, reconnectDelay);
+        } else if (reconnectAttempts.current >= maxReconnectAttempts) {
+          console.log('WebSocket: Max reconnection attempts reached. Please refresh the page if you need real-time updates.');
         }
       };
 
@@ -68,6 +89,7 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
         console.error('WebSocket error:', error);
         setIsConnected(false);
         setIsConnecting(false);
+        // Error will trigger onclose, which handles reconnection
       };
     } catch (error) {
       console.error('Failed to connect WebSocket:', error);

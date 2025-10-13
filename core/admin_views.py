@@ -1,5 +1,4 @@
-"""
-Admin Dashboard Views for Cache Management, Pincode Scaling, and Edit History
+"""Admin Dashboard Views for Cache Management, Pincode Scaling, and Edit History
 """
 
 import json
@@ -20,17 +19,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-import redis
 from .models import User, Booking, Service, AuditLog, NotificationLog, PincodeAnalytics, BusinessAlert
 from .permissions import IsSuperAdmin, IsAdminUser
 from .notification_service import NotificationService
 from . import tasks
-
-try:
-    import redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
 
 
 class CacheManagementView(View):
@@ -103,44 +95,9 @@ class CacheManagementView(View):
                     'backend': str(cache_instance.__class__.__name__),
                     'timeout': getattr(cache_instance, 'default_timeout', 'N/A'),
                     'key_prefix': getattr(cache_instance, 'key_prefix', 'N/A'),
+                    'type': 'In-Memory (LocMem)',
+                    'status': 'active'
                 }
-                
-                # Get Redis-specific stats if available
-                if REDIS_AVAILABLE and hasattr(cache_instance, '_cache'):
-                    try:
-                        redis_client = cache_instance._cache.get_client(write=True)
-                        info = redis_client.info()
-                        
-                        cache_stats.update({
-                            'redis_version': info.get('redis_version', 'N/A'),
-                            'used_memory': info.get('used_memory_human', 'N/A'),
-                            'connected_clients': info.get('connected_clients', 'N/A'),
-                            'keyspace_hits': info.get('keyspace_hits', 0),
-                            'keyspace_misses': info.get('keyspace_misses', 0),
-                            'uptime_in_seconds': info.get('uptime_in_seconds', 0),
-                        })
-                        
-                        # Calculate hit rate
-                        hits = info.get('keyspace_hits', 0)
-                        misses = info.get('keyspace_misses', 0)
-                        total = hits + misses
-                        hit_rate = (hits / total * 100) if total > 0 else 0
-                        cache_stats['hit_rate_percentage'] = round(hit_rate, 2)
-                        
-                        # Get key count for this database
-                        db_info = info.get('db0', {}) or info.get('db1', {}) or info.get('db2', {}) or info.get('db3', {}) or info.get('db4', {})
-                        if isinstance(db_info, dict):
-                            cache_stats['total_keys'] = db_info.get('keys', 0)
-                        else:
-                            # Parse string format "keys=X,expires=Y"
-                            if 'keys=' in str(db_info):
-                                keys_str = str(db_info).split('keys=')[1].split(',')[0]
-                                cache_stats['total_keys'] = int(keys_str) if keys_str.isdigit() else 0
-                            else:
-                                cache_stats['total_keys'] = 0
-                                
-                    except Exception as e:
-                        cache_stats['redis_error'] = str(e)
                 
                 stats[cache_name] = cache_stats
                 
@@ -154,7 +111,6 @@ class CacheManagementView(View):
     
     def _calculate_overall_health(self, stats: Dict) -> Dict[str, Any]:
         """Calculate overall cache health metrics"""
-        total_hit_rate = 0
         healthy_caches = 0
         total_caches = 0
         
@@ -166,18 +122,15 @@ class CacheManagementView(View):
             
             if 'error' not in cache_data:
                 healthy_caches += 1
-                hit_rate = cache_data.get('hit_rate_percentage', 0)
-                total_hit_rate += hit_rate
         
-        avg_hit_rate = total_hit_rate / total_caches if total_caches > 0 else 0
         health_percentage = (healthy_caches / total_caches * 100) if total_caches > 0 else 0
         
         return {
             'healthy_caches': healthy_caches,
             'total_caches': total_caches,
             'health_percentage': round(health_percentage, 2),
-            'average_hit_rate': round(avg_hit_rate, 2),
-            'status': 'healthy' if health_percentage >= 80 and avg_hit_rate >= 50 else 'warning' if health_percentage >= 60 else 'critical'
+            'cache_type': 'In-Memory (LocMem)',
+            'status': 'healthy' if health_percentage >= 80 else 'warning' if health_percentage >= 60 else 'critical'
         }
     
     def _clear_cache(self, cache_type: str) -> Dict[str, Any]:

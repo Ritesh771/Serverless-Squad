@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, Clock, CheckCircle, AlertCircle, FileSignature, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebSocketSubscription } from '@/context/WebSocketContext';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { bookingService, Booking } from '@/services/bookingService';
@@ -36,7 +36,7 @@ export default function CustomerDashboard() {
   const recentBookings = bookings?.slice(0, 5) || [];
 
   // WebSocket connection for real-time updates
-  const { isConnected } = useWebSocket((data) => {
+  const { isConnected } = useWebSocketSubscription((data) => {
     if (data.type === 'booking_status_update') {
       // Refresh bookings when status changes
       toast.success(`Booking status updated to ${data.status}`, {

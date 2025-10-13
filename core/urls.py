@@ -13,7 +13,7 @@ from .views import (
     # Advanced Features APIs
     PincodeAIAnalyticsAPIView, AdvancedDisputeResolutionAPIView, AdvancedVendorBonusAPIView
 )
-from .auth_views import CustomTokenObtainPairView, send_otp, verify_otp, send_vendor_otp, verify_vendor_otp
+from .auth_views import CustomTokenObtainPairView, send_otp, verify_otp, send_vendor_otp, verify_vendor_otp, register
 from rest_framework_simplejwt.views import TokenRefreshView
 
 router = DefaultRouter()
@@ -35,6 +35,7 @@ router.register(r'disputes', DisputeViewSet, basename='dispute')
 urlpatterns = [
     # Authentication URLs
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('auth/register/', register, name='register'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/send-otp/', send_otp, name='send_otp'),
     path('auth/verify-otp/', verify_otp, name='verify_otp'),
