@@ -11,7 +11,9 @@ from .admin_views import (
     notification_management,
     notification_logs,
     business_alerts,
-    pincode_analytics_view
+    pincode_analytics_view,
+    admin_live_dashboard,
+    CacheManagementView
 )
 
 app_name = 'admin_dashboard'
@@ -27,10 +29,14 @@ urlpatterns = [
     
     # Admin Dashboard Overview
     path('dashboard/stats/', admin_dashboard_stats, name='dashboard_stats'),
+    path('dashboard/live/', admin_live_dashboard, name='live_dashboard'),
     
     # Notification Management
     path('notifications/', notification_management, name='notification_management'),
     path('notifications/logs/', notification_logs, name='notification_logs'),
     path('notifications/alerts/', business_alerts, name='business_alerts'),
     path('analytics/pincode/', pincode_analytics_view, name='pincode_analytics'),
+    
+    # Cache Management
+    path('cache/', CacheManagementView.as_view(), name='cache_management'),
 ]

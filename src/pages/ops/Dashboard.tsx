@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Calendar, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react';
-// Removed useWebSocket import to fix WebSocket issues for superadmin role
 import { toast } from 'sonner';
 import { PincodeHeatmap } from '@/components/PincodeHeatmap';
+import { useQuery } from '@tanstack/react-query';
+import { adminService } from '@/services/adminService';
+import { Loader } from '@/components/Loader';
 
 interface ActiveJob {
   id: string;
@@ -16,20 +18,32 @@ interface ActiveJob {
 }
 
 export default function OpsDashboard() {
-  const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([
-    { id: '1', service: 'Plumbing', vendor: 'John Smith', customer: 'Jane Doe', location: 'New York', status: 'in-progress' },
-    { id: '2', service: 'Electrical', vendor: 'Sarah Johnson', customer: 'Bob Wilson', location: 'Los Angeles', status: 'assigned' },
-    { id: '3', service: 'HVAC', vendor: 'Mike Davis', customer: 'Alice Brown', location: 'Chicago', status: 'pending' },
-  ]);
-
-  const [stats, setStats] = useState({
-    activeJobs: 24,
-    pendingSignatures: 8,
-    paymentHolds: 5,
-    successRate: 96
+  // Fetch live dashboard data from backend
+  const { data: liveDashboardData, isLoading, error } = useQuery({
+    queryKey: ['ops-live-dashboard'],
+    queryFn: adminService.getLiveDashboardData,
+    refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Removed WebSocket connection for real-time updates to fix superadmin login issues
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="text-center">
+          <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+          <h3 className="mt-2 text-lg font-semibold">Error Loading Dashboard</h3>
+          <p className="text-muted-foreground">Please try refreshing the page</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -43,28 +57,28 @@ export default function OpsDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardCard
           title="Active Jobs"
-          value={stats.activeJobs.toString()}
+          value={liveDashboardData?.data?.booking_stats?.in_progress?.toString() || "0"}
           icon={Calendar}
           description="Currently in progress"
         />
         <DashboardCard
           title="Pending Signatures"
-          value={stats.pendingSignatures.toString()}
+          value={liveDashboardData?.data?.signature_stats?.pending?.toString() || "0"}
           icon={CheckCircle}
           description="Awaiting customer sign-off"
         />
         <DashboardCard
           title="Payment Holds"
-          value={stats.paymentHolds.toString()}
+          value={liveDashboardData?.data?.payment_stats?.on_hold?.toString() || "0"}
           icon={AlertTriangle}
           description="Requiring review"
         />
         <DashboardCard
-          title="Success Rate"
-          value={`${stats.successRate}%`}
+          title="Completion Rate"
+          value={`${liveDashboardData?.data?.booking_stats?.completion_rate || 0}%`}
           icon={CheckCircle}
           trend={{ value: 3, isPositive: true }}
-          description="Last 30 days"
+          description="Today"
         />
       </div>
 
@@ -82,30 +96,27 @@ export default function OpsDashboard() {
         {/* Recent Activity */}
         <Card className="card-elevated">
           <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
+            <CardTitle>Recent System Activity</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {activeJobs.map((job) => (
-                <div key={job.id} className="p-3 border border-border rounded-lg">
-                  <p className="font-medium text-sm">{job.service}</p>
-                  <p className="text-xs text-muted-foreground">{job.vendor} → {job.customer}</p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">{job.location}</span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full ${
-                        job.status === 'in-progress'
-                          ? 'bg-primary/10 text-primary'
-                          : job.status === 'assigned'
-                          ? 'bg-success/10 text-success'
-                          : 'bg-warning/10 text-warning'
-                      }`}
-                    >
-                      {job.status.replace('-', ' ')}
+              {liveDashboardData?.data?.recent_activities?.slice(0, 5).map((activity: any, index: number) => (
+                <div key={index} className="p-3 border border-border rounded-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium text-sm">{activity.action}</p>
+                      <p className="text-xs text-muted-foreground">{activity.resource_type} by {activity.user}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(activity.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
                 </div>
-              ))}
+              )) || (
+                <div className="text-center py-4 text-muted-foreground">
+                  No recent activity
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
