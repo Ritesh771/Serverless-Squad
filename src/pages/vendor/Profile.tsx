@@ -13,9 +13,26 @@ import { toast } from 'sonner';
 
 export default function VendorProfile() {
   const { user } = useAuth();
-  const [name, setName] = useState(user?.name || '');
+  
+  // Get user's full name or username
+  const getUserDisplayName = () => {
+    if (user?.first_name && user?.last_name) {
+      return `${user.first_name} ${user.last_name}`;
+    }
+    return user?.username || 'Vendor';
+  };
+  
+  // Get first initial for avatar
+  const getUserInitials = () => {
+    const displayName = getUserDisplayName();
+    return displayName.charAt(0).toUpperCase();
+  };
+  
+  const displayName = getUserDisplayName();
+  
+  const [name, setName] = useState(displayName);
   const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [skills, setSkills] = useState('Plumbing, Leak Repair, Installation');
   const [experience, setExperience] = useState('5 years');
   const [bio, setBio] = useState('');
@@ -44,10 +61,10 @@ export default function VendorProfile() {
           <CardContent className="pt-6 flex flex-col items-center">
             <Avatar className="h-24 w-24 mb-4">
               <AvatarFallback className="text-2xl bg-primary text-primary-foreground">
-                {user?.name.charAt(0).toUpperCase()}
+                {getUserInitials()}
               </AvatarFallback>
             </Avatar>
-            <h3 className="font-semibold text-lg">{user?.name}</h3>
+            <h3 className="font-semibold text-lg">{displayName}</h3>
             <p className="text-sm text-muted-foreground capitalize">{user?.role}</p>
             
             <Separator className="my-4 w-full" />
@@ -182,4 +199,3 @@ export default function VendorProfile() {
     </div>
   );
 }
-

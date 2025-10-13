@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Search, Calendar, User, CheckCircle, Clock, AlertTriangle, Eye } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
 import { SignaturePad } from '@/components/SignaturePad';
 
@@ -58,39 +57,6 @@ export default function SignatureVault() {
   const [selectedSignature, setSelectedSignature] = useState<SignatureRecord | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'expired'>('all');
 
-  // WebSocket connection for real-time updates
-  const { isConnected } = useWebSocket((data) => {
-    if (data.type === 'signature_completed') {
-      // Update signature status in real-time
-      setSignatures(prev => prev.map(sig => 
-        sig.id === data.signature_id 
-          ? { 
-              ...sig, 
-              status: 'completed',
-              signedAt: new Date().toISOString(),
-              signatureData: data.signature_data
-            } 
-          : sig
-      ));
-      
-      // Show notification
-      toast.success('Signature completed', {
-        description: `Customer ${data.customer_name} signed for booking ${data.booking_id}`
-      });
-    } else if (data.type === 'signature_expired') {
-      // Update signature status when expired
-      setSignatures(prev => prev.map(sig => 
-        sig.id === data.signature_id 
-          ? { ...sig, status: 'expired' } 
-          : sig
-      ));
-      
-      toast.info('Signature request expired', {
-        description: `Signature for booking ${data.booking_id} has expired`
-      });
-    }
-  });
-
   const filteredSignatures = signatures.filter(sig => {
     const matchesSearch = 
       sig.customer.toLowerCase().includes(search.toLowerCase()) ||
@@ -140,12 +106,6 @@ export default function SignatureVault() {
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Signature Vault</h1>
         <p className="text-muted-foreground mt-1 text-sm md:text-base">Manage and verify all customer signatures</p>
-        {isConnected && (
-          <div className="flex items-center gap-2 mt-2 text-sm text-success">
-            <div className="h-2 w-2 rounded-full bg-success animate-pulse"></div>
-            <span>Live updates connected</span>
-          </div>
-        )}
       </div>
 
       {/* Search and Filter */}

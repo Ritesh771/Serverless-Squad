@@ -3,7 +3,7 @@ import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, UserCheck, UserX, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useWebSocket } from '@/hooks/useWebSocket';
+// Removed useWebSocket import to fix WebSocket issues for superadmin role
 import { toast } from 'sonner';
 
 interface VendorApplication {
@@ -31,77 +31,14 @@ export default function OnboardDashboard() {
     flagged: 2
   });
 
-  // WebSocket connection for real-time updates
-  const { isConnected } = useWebSocket((data) => {
-    if (data.type === 'vendor_application_update') {
-      // Update application status
-      setRecentApplications(prev => prev.map(app => 
-        app.id === (data.application_id as string)
-          ? { ...app, status: data.status as string } 
-          : app
-      ));
-      
-      // Show notification
-      toast.info(`Application status updated`, {
-        description: `${data.vendor_name as string}'s application is now ${data.status as string}`
-      });
-    } else if (data.type === 'new_vendor_application') {
-      // Add new application to the list
-      const newApp: VendorApplication = {
-        id: data.application_id as string,
-        name: data.vendor_name as string,
-        service: data.service_type as string,
-        date: new Date().toISOString().split('T')[0],
-        status: 'pending'
-      };
-      
-      setRecentApplications(prev => [newApp, ...prev.slice(0, 2)]);
-      
-      // Update stats
-      setStats(prev => ({
-        ...prev,
-        pending: prev.pending + 1
-      }));
-      
-      toast.info('New vendor application received', {
-        description: `${data.vendor_name as string} applied for ${data.service_type as string}`
-      });
-    } else if (data.type === 'vendor_approved') {
-      // Update stats when vendor is approved
-      setStats(prev => ({
-        ...prev,
-        pending: Math.max(0, prev.pending - 1),
-        approved: prev.approved + 1
-      }));
-      
-      toast.success('Vendor approved successfully', {
-        description: `${data.vendor_name as string} has been approved`
-      });
-    } else if (data.type === 'vendor_rejected') {
-      // Update stats when vendor is rejected
-      setStats(prev => ({
-        ...prev,
-        pending: Math.max(0, prev.pending - 1),
-        rejectionRate: Math.min(100, prev.rejectionRate + 1)
-      }));
-      
-      toast.info('Vendor application rejected', {
-        description: `${data.vendor_name as string}'s application was rejected`
-      });
-    }
-  });
+  // Removed WebSocket connection for real-time updates to fix superadmin login issues
 
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Onboarding Dashboard</h1>
         <p className="text-muted-foreground mt-1 text-sm md:text-base">Manage vendor applications and approvals</p>
-        {isConnected && (
-          <div className="flex items-center gap-2 mt-2 text-sm text-success">
-            <div className="h-2 w-2 rounded-full bg-success animate-pulse"></div>
-            <span>Live updates connected</span>
-          </div>
-        )}
+        {/* Removed live updates indicator to fix superadmin login issues */}
       </div>
 
       {/* Stats */}

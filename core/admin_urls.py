@@ -4,7 +4,6 @@ Admin URLs for Cache Management, Pincode Scaling, and Edit History features
 
 from django.urls import path
 from .admin_views import (
-    CacheManagementView,
     pincode_scaling_data,
     edit_history_diff_viewer,
     export_edit_history,
@@ -18,10 +17,6 @@ from .admin_views import (
 app_name = 'admin_dashboard'
 
 urlpatterns = [
-    # Cache Management Interface
-    path('cache/', CacheManagementView.as_view(), name='cache_management'),
-    path('cache/stats/', CacheManagementView.as_view(), name='cache_stats'),
-    
     # Pincode Scaling Map Visualization
     path('pincode-scaling/', pincode_scaling_data, name='pincode_scaling'),
     path('pincode-scaling/data/', pincode_scaling_data, name='pincode_scaling_data'),

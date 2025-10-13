@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Calendar, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
+// Removed useWebSocket import to fix WebSocket issues for superadmin role
 import { toast } from 'sonner';
 import { PincodeHeatmap } from '@/components/PincodeHeatmap';
 
@@ -29,66 +29,14 @@ export default function OpsDashboard() {
     successRate: 96
   });
 
-  // WebSocket connection for real-time updates
-  const { isConnected } = useWebSocket((data) => {
-    if (data.type === 'booking_status_update') {
-      // Update active jobs list
-      setActiveJobs(prev => prev.map(job => 
-        job.id === (data.booking_id as string)
-          ? { ...job, status: data.status as string } 
-          : job
-      ));
-      
-      // Show notification
-      toast.info(`Booking status updated`, {
-        description: `${data.service_name as string || 'Service'} is now ${data.status as string}`
-      });
-    } else if (data.type === 'signature_completed') {
-      // Update stats when signature is completed
-      setStats(prev => ({
-        ...prev,
-        pendingSignatures: Math.max(0, prev.pendingSignatures - 1)
-      }));
-      
-      toast.success('Customer signature completed', {
-        description: `Booking ${data.booking_id as string} signed`
-      });
-    } else if (data.type === 'new_booking') {
-      // Add new booking to active jobs
-      const newJob: ActiveJob = {
-        id: data.booking_id as string,
-        service: data.service_name as string,
-        vendor: (data.vendor_name as string) || 'Pending',
-        customer: data.customer_name as string,
-        location: (data.location as string) || 'Unknown',
-        status: 'pending'
-      };
-      
-      setActiveJobs(prev => [newJob, ...prev]);
-      
-      // Update stats
-      setStats(prev => ({
-        ...prev,
-        activeJobs: prev.activeJobs + 1
-      }));
-      
-      toast.info('New booking created', {
-        description: `${data.service_name as string} for ${data.customer_name as string}`
-      });
-    }
-  });
+  // Removed WebSocket connection for real-time updates to fix superadmin login issues
 
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Operations Dashboard</h1>
         <p className="text-muted-foreground mt-1 text-sm md:text-base">Monitor and manage all platform operations</p>
-        {isConnected && (
-          <div className="flex items-center gap-2 mt-2 text-sm text-success">
-            <div className="h-2 w-2 rounded-full bg-success animate-pulse"></div>
-            <span>Live updates connected</span>
-          </div>
-        )}
+        {/* Removed live updates indicator to fix superadmin login issues */}
       </div>
 
       {/* Stats */}

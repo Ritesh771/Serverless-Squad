@@ -5,7 +5,6 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Calendar, DollarSign, Clock, CheckCircle, User, Camera, FileSignature } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
 import api from '@/services/api';
 import { ENDPOINTS } from '@/services/endpoints';
@@ -27,51 +26,12 @@ export default function VendorDashboard() {
     { id: '2', customer: 'Bob Smith', service: 'Electrical', time: '2:00 PM', address: '456 Oak Ave', status: 'in_progress' },
   ]);
 
-  // WebSocket connection for real-time updates
-  const { isConnected, sendMessage } = useWebSocket((data) => {
-    if (data.type === 'booking_status_update') {
-      // Update job status in real-time
-      setUpcomingJobs(prev => prev.map(job => 
-        job.id === (data.booking_id as string)
-          ? { ...job, status: data.status as string } 
-          : job
-      ));
-      
-      // Show notification
-      toast.info(`Job status updated`, {
-        description: `${data.service_name || 'Service'} is now ${data.status}`
-      });
-    } else if (data.type === 'new_booking') {
-      // Add new booking to the list
-      const newJob: Job = {
-        id: data.booking_id as string,
-        customer: data.customer_name as string,
-        service: data.service_name as string,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        address: data.address as string,
-        status: 'scheduled'
-      };
-      
-      setUpcomingJobs(prev => [...prev, newJob]);
-      
-      toast.success('New booking assigned!', {
-        description: `${data.service_name as string} for ${data.customer_name as string}`
-      });
-    }
-  });
-
   // Toggle availability status
   const toggleAvailability = async (checked: boolean) => {
     setIsAvailable(checked);
     
     try {
-      // Send availability update via WebSocket
-      sendMessage({
-        type: 'availability_update',
-        is_available: checked
-      });
-      
-      // Also update via API as fallback
+      // Update via API
       await api.post(ENDPOINTS.VENDOR.AVAILABILITY, {
         is_available: checked
       });
@@ -83,39 +43,12 @@ export default function VendorDashboard() {
     }
   };
 
-  // Request signature for a completed job
-  const requestSignature = async (jobId: string) => {
-    try {
-      sendMessage({
-        type: 'request_signature',
-        booking_id: jobId
-      });
-      
-      toast.success('Signature request sent to customer');
-      
-      // Update job status locally
-      setUpcomingJobs(prev => prev.map(job => 
-        job.id === jobId 
-          ? { ...job, status: 'signature_requested' } 
-          : job
-      ));
-    } catch (error) {
-      toast.error('Failed to request signature');
-    }
-  };
-
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Vendor Dashboard</h1>
           <p className="text-muted-foreground mt-1 text-sm md:text-base">Manage your jobs and earnings</p>
-          {isConnected && (
-            <div className="flex items-center gap-2 mt-2 text-sm text-success">
-              <div className="h-2 w-2 rounded-full bg-success animate-pulse"></div>
-              <span>Live updates connected</span>
-            </div>
-          )}
         </div>
 
         <Card className="card-elevated w-full md:w-auto">
@@ -202,17 +135,6 @@ export default function VendorDashboard() {
                         >
                           {job.status.replace('_', ' ')}
                         </span>
-                        {job.status === 'completed' && (
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            onClick={() => requestSignature(job.id)}
-                            className="h-6 text-xs"
-                          >
-                            <FileSignature className="h-3 w-3 mr-1" />
-                            Request Signature
-                          </Button>
-                        )}
                         {(job.status === 'completed' || job.status === 'in_progress') && (
                           <Button 
                             size="sm" 
