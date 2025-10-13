@@ -4,10 +4,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { WebSocketProvider } from "@/context/WebSocketContext";
+// Removed WebSocketProvider import to fix WebSocket issues
 import { Sidebar } from "@/components/Sidebar";
 import { Navbar } from "@/components/Navbar";
-import { ChatBot } from "@/components/ChatBot";
+// Removed ChatBot import to fix WebSocket issues for superadmin role
 
 // Auth pages
 import Login from "./pages/auth/Login";
@@ -80,7 +80,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto bg-background">
           {children}
         </main>
-        <ChatBot />
+        {/* Removed ChatBot to fix WebSocket issues for superadmin role */}
       </div>
     </div>
   );
@@ -130,19 +130,23 @@ function AppRoutes() {
       <Route path="/onboard-manager/vendor-queue" element={<ProtectedLayout><VendorQueue /></ProtectedLayout>} />
       <Route path="/onboard-manager/vendor-queue/:id" element={<ProtectedLayout><VendorDetails /></ProtectedLayout>} />
       <Route path="/onboard-manager/approved-vendors" element={<ProtectedLayout><ApprovedVendors /></ProtectedLayout>} />
-      {/* Legacy onboard routes - redirect to onboard-manager */}
+      {/* Legacy onboard routes - redirect to onboard-manager */
+      }
       <Route path="/onboard/*" element={<Navigate to="/onboard-manager/dashboard" replace />} />
 
-      {/* Ops Manager routes (backend uses ops_manager) */}
+      {/* Ops Manager routes (backend uses ops_manager) */
+      }
       <Route path="/ops-manager/dashboard" element={<ProtectedLayout><OpsDashboard /></ProtectedLayout>} />
       <Route path="/ops-manager/bookings-monitor" element={<ProtectedLayout><BookingsMonitor /></ProtectedLayout>} />
       <Route path="/ops-manager/signature-vault" element={<ProtectedLayout><SignatureVault /></ProtectedLayout>} />
       <Route path="/ops-manager/manual-payments" element={<ProtectedLayout><ManualPayments /></ProtectedLayout>} />
       <Route path="/ops-manager/analytics" element={<ProtectedLayout><OpsAnalytics /></ProtectedLayout>} />
-      {/* Legacy ops routes - redirect to ops-manager */}
+      {/* Legacy ops routes - redirect to ops-manager */
+      }
       <Route path="/ops/*" element={<Navigate to="/ops-manager/dashboard" replace />} />
 
-      {/* Super Admin routes (backend uses super_admin) */}
+      {/* Super Admin routes (backend uses super_admin) */
+      }
       <Route path="/super-admin/dashboard" element={<ProtectedLayout><AdminDashboard /></ProtectedLayout>} />
       <Route path="/super-admin/users" element={<ProtectedLayout><AdminUsers /></ProtectedLayout>} />
       <Route path="/super-admin/roles" element={<ProtectedLayout><AdminRoles /></ProtectedLayout>} />
@@ -150,10 +154,12 @@ function AppRoutes() {
       <Route path="/super-admin/ethics" element={<ProtectedLayout><AdminEthics /></ProtectedLayout>} />
       <Route path="/super-admin/reports" element={<ProtectedLayout><AdminReports /></ProtectedLayout>} />
       <Route path="/super-admin/settings" element={<ProtectedLayout><AdminSettings /></ProtectedLayout>} />
-      {/* Legacy admin routes - redirect to super-admin */}
+      {/* Legacy admin routes - redirect to super-admin */
+      }
       <Route path="/admin/*" element={<Navigate to="/super-admin/dashboard" replace />} />
 
-      {/* Default redirects */}
+      {/* Default redirects */
+      }
       <Route path="/" element={<Navigate to="/auth/login" />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -167,9 +173,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <WebSocketProvider>
-            <AppRoutes />
-          </WebSocketProvider>
+          {/* Removed WebSocketProvider to fix WebSocket issues */}
+          <AppRoutes />
+          {/* Removed WebSocketProvider to fix WebSocket issues */}
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

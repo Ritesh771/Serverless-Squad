@@ -1,4 +1,4 @@
-"""Admin Dashboard Views for Cache Management, Pincode Scaling, and Edit History
+"""Admin Dashboard Views for Pincode Scaling, and Edit History
 """
 
 import json
@@ -18,6 +18,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView
 
 from .models import User, Booking, Service, AuditLog, NotificationLog, PincodeAnalytics, BusinessAlert
 from .permissions import IsSuperAdmin, IsAdminUser
@@ -25,30 +26,26 @@ from .notification_service import NotificationService
 from . import tasks
 
 
-class CacheManagementView(View):
+class CacheManagementView(APIView):
     """
     Cache Management Interface for Admins
     Provides cache statistics, selective clearing, and monitoring
     """
     
-    @method_decorator(csrf_exempt)
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
+    permission_classes = [IsAuthenticated, IsAdminUser]
     
     def get(self, request):
         """Get cache statistics and health information"""
-        # Allow ops_manager, super_admin, and admin roles
-        if not request.user.is_authenticated:
-            return JsonResponse({'error': 'Authentication required'}, status=401)
-            
+        # Remove custom authentication check since we're using DRF permissions
+        
         if request.user.role not in ['super_admin', 'ops_manager', 'admin']:
-            return JsonResponse({
+            return Response({
                 'error': 'Unauthorized',
                 'message': f'Your role ({request.user.role}) does not have permission to access cache management. Required roles: super_admin, ops_manager, admin'
-            }, status=403)
+            }, status=status.HTTP_403_FORBIDDEN)
         
         cache_stats = self._get_cache_statistics()
-        return JsonResponse({
+        return Response({
             'status': 'success',
             'cache_stats': cache_stats,
             'timestamp': timezone.now().isoformat()
@@ -56,19 +53,16 @@ class CacheManagementView(View):
     
     def post(self, request):
         """Clear specific cache categories"""
-        # Allow ops_manager, super_admin, and admin roles
-        if not request.user.is_authenticated:
-            return JsonResponse({'error': 'Authentication required'}, status=401)
-            
+        # Remove custom authentication check since we're using DRF permissions
+        
         if request.user.role not in ['super_admin', 'ops_manager', 'admin']:
-            return JsonResponse({
+            return Response({
                 'error': 'Unauthorized',
                 'message': f'Your role ({request.user.role}) does not have permission to clear cache. Required roles: super_admin, ops_manager, admin'
-            }, status=403)
+            }, status=status.HTTP_403_FORBIDDEN)
         
         try:
-            data = json.loads(request.body)
-            cache_type = data.get('cache_type', 'all')
+            cache_type = request.data.get('cache_type', 'all')
             
             result = self._clear_cache(cache_type)
             
@@ -83,17 +77,17 @@ class CacheManagementView(View):
                 new_values={'cache_type': cache_type, 'result': result}
             )
             
-            return JsonResponse({
+            return Response({
                 'status': 'success',
                 'message': f'Cache "{cache_type}" cleared successfully',
                 'result': result
             })
         
         except Exception as e:
-            return JsonResponse({
+            return Response({
                 'status': 'error',
                 'message': f'Failed to clear cache: {str(e)}'
-            }, status=500)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def _get_cache_statistics(self) -> Dict[str, Any]:
         """Get comprehensive cache statistics"""
@@ -558,10 +552,6 @@ def admin_dashboard_stats(request):
     Combined dashboard statistics for admin overview
     """
     
-    # Cache stats
-    cache_view = CacheManagementView()
-    cache_stats = cache_view._get_cache_statistics()
-    
     # Recent activity stats
     recent_logs = AuditLog.objects.filter(
         timestamp__gte=timezone.now() - timedelta(hours=24)
@@ -587,7 +577,6 @@ def admin_dashboard_stats(request):
     
     return Response({
         'status': 'success',
-        'cache_health': cache_stats.get('overall_health', {}),
         'activity_stats': activity_stats,
         'pincode_stats': pincode_stats,
         'timestamp': timezone.now().isoformat()

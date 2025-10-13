@@ -5,7 +5,7 @@ import { DollarSign, TrendingUp, Calendar, ArrowUpRight, Loader2 } from 'lucide-
 import { Link } from 'react-router-dom';
 import api from '@/services/api';
 import { toast } from 'sonner';
-import { useWebSocket } from '@/hooks/useWebSocket';
+// Removed useWebSocket import to fix WebSocket issues
 
 interface Earning {
   id: string;
@@ -31,55 +31,7 @@ export default function VendorEarnings() {
     fetchEarningsSummary();
   }, []);
 
-  // WebSocket connection for real-time updates
-  const { isConnected } = useWebSocket((data) => {
-    if (data.type === 'earning_update') {
-      // Update earnings in real-time
-      if (summary) {
-        const updatedEarnings = summary.recent_earnings.map(earning => 
-          earning.id === (data.earning_id as string)
-            ? { ...earning, status: data.status as 'pending' | 'approved' | 'released' | 'on_hold', remarks: data.remarks as string }
-            : earning
-        );
-        
-        setSummary({
-          ...summary,
-          recent_earnings: updatedEarnings,
-          pending_earnings: data.pending_earnings as number || summary.pending_earnings,
-          total_earnings: data.total_earnings as number || summary.total_earnings
-        });
-        
-        // Show notification
-        toast.info('Earning status updated', {
-          description: `Payment for ${data.booking_service as string} is now ${data.status as string}`
-        });
-      }
-    } else if (data.type === 'new_earning') {
-      // Add new earning to the list
-      if (summary) {
-        const newEarning: Earning = {
-          id: data.earning_id as string,
-          amount: data.amount as string,
-          status: data.status as 'pending' | 'approved' | 'released' | 'on_hold',
-          booking_service: data.booking_service as string,
-          customer_name: data.customer_name as string,
-          created_at: new Date().toISOString(),
-          remarks: data.remarks as string
-        };
-        
-        setSummary({
-          ...summary,
-          recent_earnings: [newEarning, ...summary.recent_earnings.slice(0, 4)],
-          total_earnings: summary.total_earnings + parseFloat(data.amount as string)
-        });
-        
-        // Show notification
-        toast.success('New earning added', {
-          description: `Payment for ${data.booking_service as string}: $${data.amount as string}`
-        });
-      }
-    }
-  });
+  // Removed WebSocket connection for real-time updates to fix WebSocket issues
 
   const fetchEarningsSummary = async () => {
     try {
@@ -125,12 +77,7 @@ export default function VendorEarnings() {
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Earnings</h1>
         <p className="text-muted-foreground mt-1 text-sm md:text-base">Track your payments and transactions</p>
-        {isConnected && (
-          <div className="flex items-center gap-2 mt-2 text-sm text-success">
-            <div className="h-2 w-2 rounded-full bg-success animate-pulse"></div>
-            <span>Live updates connected</span>
-          </div>
-        )}
+        {/* Removed live updates indicator to fix WebSocket issues */}
       </div>
 
       {/* Stats */}

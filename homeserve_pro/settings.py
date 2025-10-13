@@ -30,7 +30,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
-    'channels',  # WebSocket support
 
     # Local apps
     'core',
@@ -70,7 +69,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'homeserve_pro.wsgi.application'
-ASGI_APPLICATION = 'homeserve_pro.asgi.application'
 
 # Database
 DATABASES = {
@@ -147,17 +145,6 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8080",
 ]
 CORS_ALLOW_CREDENTIALS = True
-
-# Channels Configuration
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-        'CONFIG': {
-            'capacity': 1500,
-            'expiry': 60,
-        },
-    },
-}
 
 # Cache Configuration
 CACHES = {

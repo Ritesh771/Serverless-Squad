@@ -116,8 +116,6 @@ export const ENDPOINTS = {
 
   // Admin Dashboard
   ADMIN: {
-    CACHE_STATS: '/admin-dashboard/cache/',
-    CLEAR_CACHE: '/admin-dashboard/cache/',
     PINCODE_SCALING: '/admin-dashboard/pincode-scaling/data/',
     EDIT_HISTORY: '/admin-dashboard/edit-history/',
     EXPORT_HISTORY: '/admin-dashboard/edit-history/export/',

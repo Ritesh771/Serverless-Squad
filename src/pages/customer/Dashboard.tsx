@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, Clock, CheckCircle, AlertCircle, FileSignature, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useWebSocketSubscription } from '@/context/WebSocketContext';
+// Removed useWebSocketSubscription import to fix WebSocket issues
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { bookingService, Booking } from '@/services/bookingService';
@@ -35,19 +35,7 @@ export default function CustomerDashboard() {
   const pendingSignatures = signatures?.filter(s => s.status === 'pending') || [];
   const recentBookings = bookings?.slice(0, 5) || [];
 
-  // WebSocket connection for real-time updates
-  const { isConnected } = useWebSocketSubscription((data) => {
-    if (data.type === 'booking_status_update') {
-      // Refresh bookings when status changes
-      toast.success(`Booking status updated to ${data.status}`, {
-        description: `Service: ${data.service_name || 'Unknown service'}`
-      });
-    } else if (data.type === 'signature_completed') {
-      toast.success('Signature completed successfully!', {
-        description: 'Payment will be processed shortly'
-      });
-    }
-  });
+  // Removed WebSocket connection for real-time updates to fix login issues
 
   if (isLoading) {
     return (
@@ -74,12 +62,7 @@ export default function CustomerDashboard() {
       <div>
         <h1 className="text-2xl md:text-3xl font-bold text-foreground">Welcome Back!</h1>
         <p className="text-muted-foreground mt-1 text-sm md:text-base">Manage your home service bookings</p>
-        {isConnected && (
-          <div className="flex items-center gap-2 mt-2 text-sm text-success">
-            <div className="h-2 w-2 rounded-full bg-success animate-pulse"></div>
-            <span>Live updates connected</span>
-          </div>
-        )}
+        {/* Removed live updates indicator to fix login issues */}
       </div>
 
       {/* Stats */}

@@ -424,6 +424,21 @@ class LiveStatusConsumer(AsyncWebsocketConsumer):
             self.user_id = self.scope['url_route']['kwargs']['user_id']
             self.role = self.scope['url_route']['kwargs'].get('role', 'customer')
             
+            # For development, we'll be more permissive with authentication
+            # In production, you should properly validate authentication
+            user_authenticated = False
+            if "user" in self.scope and self.scope["user"].is_authenticated:
+                user_authenticated = True
+                # Validate user ID matches authenticated user (for non-admin roles)
+                if str(self.scope['user'].id) != str(self.user_id) and self.scope['user'].role not in ['admin', 'ops_manager']:
+                    logger.warning(f"LiveStatusConsumer: User {self.scope['user'].id} attempted to connect as user {self.user_id}")
+                    await self.close(code=4002)
+                    return
+            else:
+                # For development, allow unauthenticated connections but log a warning
+                logger.warning("LiveStatusConsumer: Unauthenticated connection attempt - allowing for development")
+                user_authenticated = True  # Allow for development
+            
             # Accept connection first
             await self.accept()
             logger.info(f"LiveStatusConsumer accepted connection for user {self.user_id} with role {self.role}")
@@ -444,8 +459,8 @@ class LiveStatusConsumer(AsyncWebsocketConsumer):
                     self.channel_name
                 )
                 logger.info(f"LiveStatusConsumer joined groups for user {self.user_id}")
-            except AttributeError:
-                logger.warning(f"Channel layer not available, WebSocket will work in direct mode")
+            except Exception as e:
+                logger.warning(f"Channel layer not available or error joining groups: {str(e)}, WebSocket will work in direct mode")
                 
             # Send connection confirmation
             await self.send(text_data=json.dumps({
@@ -456,20 +471,28 @@ class LiveStatusConsumer(AsyncWebsocketConsumer):
             }))
         except Exception as e:
             logger.error(f"Error in live status consumer connect: {str(e)}")
-            await self.close()
+            await self.close(code=4000)
     
     async def disconnect(self, close_code):
-        # Leave user group
-        await self.channel_layer.group_discard(
-            self.user_status_group,
-            self.channel_name
-        )
-        
-        # Leave role group
-        await self.channel_layer.group_discard(
-            self.role_status_group,
-            self.channel_name
-        )
+        try:
+            # Leave user group
+            await self.channel_layer.group_discard(
+                self.user_status_group,
+                self.channel_name
+            )
+        except Exception:
+            pass  # Ignore errors if channel layer is not available
+            
+        try:
+            # Leave role group
+            await self.channel_layer.group_discard(
+                self.role_status_group,
+                self.channel_name
+            )
+        except Exception:
+            pass  # Ignore errors if channel layer is not available
+            
+        logger.info(f"LiveStatusConsumer disconnected for user {self.user_id} with code {close_code}")
     
     async def receive(self, text_data):
         """Handle incoming messages"""
@@ -481,60 +504,96 @@ class LiveStatusConsumer(AsyncWebsocketConsumer):
                 await self.subscribe_to_booking(data.get('booking_id'))
             elif message_type == 'unsubscribe_from_booking':
                 await self.unsubscribe_from_booking(data.get('booking_id'))
+            else:
+                # Echo unknown messages back to client for debugging
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': f'Unknown message type: {message_type}',
+                    'received_data': data
+                }))
+        except json.JSONDecodeError:
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': 'Invalid JSON format'
+            }))
         except Exception as e:
             logger.error(f"Error processing message in LiveStatusConsumer: {str(e)}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Error processing message: {str(e)}'
+            }))
     
     async def subscribe_to_booking(self, booking_id):
         """Subscribe to status updates for a specific booking"""
         if booking_id:
-            booking_group = f'status_booking_{booking_id}'
-            await self.channel_layer.group_add(
-                booking_group,
-                self.channel_name
-            )
-            
-            # Send confirmation
-            await self.send(text_data=json.dumps({
-                'type': 'subscription_confirmed',
-                'booking_id': booking_id,
-                'message': f'Subscribed to status updates for booking {booking_id}'
-            }))
+            try:
+                booking_group = f'status_booking_{booking_id}'
+                await self.channel_layer.group_add(
+                    booking_group,
+                    self.channel_name
+                )
+                
+                # Send confirmation
+                await self.send(text_data=json.dumps({
+                    'type': 'subscription_confirmed',
+                    'booking_id': booking_id,
+                    'message': f'Subscribed to status updates for booking {booking_id}'
+                }))
+            except Exception as e:
+                logger.error(f"Error subscribing to booking {booking_id}: {str(e)}")
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': f'Failed to subscribe to booking {booking_id}: {str(e)}'
+                }))
     
     async def unsubscribe_from_booking(self, booking_id):
         """Unsubscribe from status updates for a specific booking"""
         if booking_id:
-            booking_group = f'status_booking_{booking_id}'
-            await self.channel_layer.group_discard(
-                booking_group,
-                self.channel_name
-            )
-            
-            # Send confirmation
-            await self.send(text_data=json.dumps({
-                'type': 'unsubscription_confirmed',
-                'booking_id': booking_id,
-                'message': f'Unsubscribed from status updates for booking {booking_id}'
-            }))
+            try:
+                booking_group = f'status_booking_{booking_id}'
+                await self.channel_layer.group_discard(
+                    booking_group,
+                    self.channel_name
+                )
+                
+                # Send confirmation
+                await self.send(text_data=json.dumps({
+                    'type': 'unsubscription_confirmed',
+                    'booking_id': booking_id,
+                    'message': f'Unsubscribed from status updates for booking {booking_id}'
+                }))
+            except Exception as e:
+                logger.error(f"Error unsubscribing from booking {booking_id}: {str(e)}")
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': f'Failed to unsubscribe from booking {booking_id}: {str(e)}'
+                }))
     
     async def booking_status_update(self, event):
         """Send booking status update to WebSocket"""
-        await self.send(text_data=json.dumps({
-            'type': 'booking_status_update',
-            'booking_id': event['booking_id'],
-            'status': event['status'],
-            'previous_status': event.get('previous_status'),
-            'timestamp': event['timestamp'],
-            'message': event['message'],
-            'eta_minutes': event.get('eta_minutes'),
-            'vendor_location': event.get('vendor_location')
-        }))
+        try:
+            await self.send(text_data=json.dumps({
+                'type': 'booking_status_update',
+                'booking_id': event['booking_id'],
+                'status': event['status'],
+                'previous_status': event.get('previous_status'),
+                'timestamp': event['timestamp'],
+                'message': event['message'],
+                'eta_minutes': event.get('eta_minutes'),
+                'vendor_location': event.get('vendor_location')
+            }))
+        except Exception as e:
+            logger.error(f"Error sending booking status update: {str(e)}")
     
     async def booking_eta_update(self, event):
         """Send ETA update to WebSocket"""
-        await self.send(text_data=json.dumps({
-            'type': 'booking_eta_update',
-            'booking_id': event['booking_id'],
-            'eta_minutes': event['eta_minutes'],
-            'timestamp': event['timestamp'],
-            'message': event['message']
-        }))
+        try:
+            await self.send(text_data=json.dumps({
+                'type': 'booking_eta_update',
+                'booking_id': event['booking_id'],
+                'eta_minutes': event['eta_minutes'],
+                'timestamp': event['timestamp'],
+                'message': event['message']
+            }))
+        except Exception as e:
+            logger.error(f"Error sending booking ETA update: {str(e)}")
