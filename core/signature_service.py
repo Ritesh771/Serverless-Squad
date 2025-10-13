@@ -37,10 +37,44 @@ class SignatureService:
                 expires_at=timezone.now() + timedelta(hours=48)  # 48 hours expiry
             )
             
+            # Try to use DocuSign if available
+            docusign_envelope_id = None
+            docusign_signing_url = None
+            
+            try:
+                from .docusign_service import get_docusign_service
+                docusign_service = get_docusign_service()
+                
+                if docusign_service:
+                    # Create DocuSign envelope
+                    envelope_id = docusign_service.create_signature_envelope(
+                        booking,
+                        booking.customer.email,
+                        booking.customer.get_full_name()
+                    )
+                    
+                    # Update signature with DocuSign info
+                    signature.docusign_envelope_id = envelope_id
+                    # In a real implementation, you would get the signing URL from DocuSign
+                    # signature.docusign_signing_url = signing_url
+                    signature.save()
+                    
+                    docusign_envelope_id = envelope_id
+                    logger.info(f"DocuSign envelope created for booking {booking.id}: {envelope_id}")
+                    
+            except Exception as e:
+                logger.warning(f"DocuSign integration failed, falling back to email notification: {str(e)}")
+            
             # Send notification to customer
             try:
                 from .notification_service import NotificationService
-                signature_link = f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')}/signature/{signature.id}"
+                if docusign_envelope_id and docusign_signing_url:
+                    # Use DocuSign signing URL
+                    signature_link = docusign_signing_url
+                else:
+                    # Fallback to local signature page
+                    signature_link = f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')}/signature/{signature.id}"
+                
                 notification_sent = NotificationService.send_signature_notification(booking, signature_link)
                 
                 if notification_sent:
@@ -179,3 +213,20 @@ class SignatureService:
             
         except Exception as e:
             logger.error(f"Failed to send WebSocket notification: {str(e)}")
+    
+    @staticmethod
+    def handle_docusign_webhook(payload):
+        """Handle DocuSign webhook events"""
+        try:
+            from .docusign_service import get_docusign_service
+            docusign_service = get_docusign_service()
+            
+            if docusign_service:
+                return docusign_service.handle_webhook_event(payload)
+            else:
+                logger.warning("DocuSign service not available to handle webhook")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error handling DocuSign webhook: {str(e)}")
+            return False

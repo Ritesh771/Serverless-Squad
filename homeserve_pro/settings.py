@@ -1,10 +1,12 @@
 """
-Django settings for HomeServe Pro project.
+Django settings for HomeServe Pro project
 """
 
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
+import ssl
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -14,9 +16,7 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-*q04pmxv$-p7e$sywzk^=
 DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,[::1]', cast=lambda v: [s.strip() for s in v.split(',')])
 
-
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -24,14 +24,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Third party apps
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
     'channels',  # WebSocket support
-    
+
     # Local apps
     'core',
 ]
@@ -72,10 +72,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'homeserve_pro.wsgi.application'
 ASGI_APPLICATION = 'homeserve_pro.asgi.application'
 
-
 # Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -83,10 +80,7 @@ DATABASES = {
     }
 }
 
-
 # Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -102,24 +96,16 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
+# Static & Media
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Media files
 MEDIA_URL = config('MEDIA_URL', default='/media/')
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -160,63 +146,93 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
 ]
-
 CORS_ALLOW_CREDENTIALS = True
 
-# Channels Configuration - Improved for better WebSocket support
+# Channels Configuration
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
         'CONFIG': {
-            'capacity': 1500,  # Increase capacity
-            'expiry': 60,      # Increase message expiry to 60 seconds
+            'capacity': 1500,
+            'expiry': 60,
         },
     },
 }
 
-# Cache Configuration (In-Memory)
+# Cache Configuration
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'homeserve-default-cache',
-        'TIMEOUT': 300,  # 5 minutes
-        'OPTIONS': {
-            'MAX_ENTRIES': 1000,
-        }
+        'TIMEOUT': 300,
+        'OPTIONS': {'MAX_ENTRIES': 1000}
     },
     'sessions': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'homeserve-sessions-cache',
-        'TIMEOUT': 60 * 60 * 24,  # 24 hours for sessions
-        'OPTIONS': {
-            'MAX_ENTRIES': 500,
-        }
+        'TIMEOUT': 60 * 60 * 24,
+        'OPTIONS': {'MAX_ENTRIES': 500}
     },
     'search_results': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'homeserve-search-cache',
-        'TIMEOUT': 60 * 30,  # 30 minutes for search results
-        'OPTIONS': {
-            'MAX_ENTRIES': 300,
-        }
+        'TIMEOUT': 60 * 30,
+        'OPTIONS': {'MAX_ENTRIES': 300}
     },
     'booking_cache': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'homeserve-booking-cache',
-        'TIMEOUT': 60 * 10,  # 10 minutes for booking data
-        'OPTIONS': {
-            'MAX_ENTRIES': 200,
-        }
+        'TIMEOUT': 60 * 10,
+        'OPTIONS': {'MAX_ENTRIES': 200}
     },
     'analytics_cache': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'homeserve-analytics-cache',
-        'TIMEOUT': 60 * 60,  # 1 hour for analytics data
-        'OPTIONS': {
-            'MAX_ENTRIES': 100,
-        }
+        'TIMEOUT': 60 * 60,
+        'OPTIONS': {'MAX_ENTRIES': 100}
     }
 }
+
+# Background Tasks Configuration (synchronous for dev)
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
+
+# Stripe Configuration
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='your_stripe_publishable_key_here')
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='your_stripe_secret_key_here')
+STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='your_stripe_webhook_secret_here')
+
+# DocuSign Configuration
+DOCUSIGN_CLIENT_ID = config('DOCUSIGN_CLIENT_ID', default='')
+DOCUSIGN_CLIENT_SECRET = config('DOCUSIGN_CLIENT_SECRET', default='')
+DOCUSIGN_ACCOUNT_ID = config('DOCUSIGN_ACCOUNT_ID', default='')
+DOCUSIGN_BASE_PATH = config('DOCUSIGN_BASE_PATH', default='https://demo.docusign.net/restapi')
+DOCUSIGN_REDIRECT_URI = config('DOCUSIGN_REDIRECT_URI', default='http://localhost:3000/callback')
+
+# Email Configuration
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='HomeServe Pro <noreply@homeservepro.com>')
+EMAIL_SSL_CERTFILE = config('EMAIL_SSL_CERTFILE', default=None)
+EMAIL_SSL_KEYFILE = config('EMAIL_SSL_KEYFILE', default=None)
+
+# SSL bypass for local dev
+if DEBUG:
+    try:
+        import certifi
+        ssl._create_default_https_context = ssl._create_unverified_context
+    except ImportError:
+        pass
+
+# OTP Configuration
+OTP_METHOD = config('OTP_METHOD', default='email')
+OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=5, cast=int)
+OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
 
 # Logging Configuration
 LOGGING = {
@@ -250,3 +266,16 @@ LOGGING = {
         },
     },
 }
+
+# Optional: Disable Redis in dev mode
+if os.environ.get('NO_REDIS', 'false').lower() == 'true':
+    print("⚠️  Running with in-memory cache (Redis disabled)")
+    CACHES['default'] = {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'homeserve-cache',
+        'TIMEOUT': 300,
+        'OPTIONS': {'MAX_ENTRIES': 1000}
+    }
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+    print("✅ Temporary cache settings applied")

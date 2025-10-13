@@ -141,4 +141,14 @@ export const ENDPOINTS = {
     QUERY: '/api/chat/query/',
     CONTEXT: '/api/chat/context/',
   },
+
+  // DocuSign Integration
+  DOCUSIGN: {
+    ENVELOPES: '/api/docusign/envelopes/',
+    ENVELOPE_STATUS: (envelopeId: string) => `/api/docusign/envelopes/${envelopeId}/status/`,
+    WEBHOOK: '/webhooks/docusign/',
+  },
+
+  // Enhanced Signatures
+  ENHANCED_SIGNATURES: '/api/enhanced-signatures/',
 };

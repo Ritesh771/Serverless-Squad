@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from datetime import datetime, date
 import json
 import logging
@@ -253,8 +254,9 @@ class BookingViewSet(viewsets.ModelViewSet):
             'message': 'Booking completed successfully',
             'payment_intent': payment_intent
         })
-    
-    @action(detail=True, methods=['post'], permission_classes=[IsVendor])
+
+
+
     def request_signature(self, request, pk=None):
         """Request customer signature for completed booking"""
         booking = get_object_or_404(Booking, pk=pk, vendor=request.user)
@@ -2467,3 +2469,24 @@ class AdvancedVendorBonusAPIView(APIView):
                 {'error': 'Failed to analyze vendor bonuses', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def docusign_webhook(request):
+    """Handle DocuSign webhook events"""
+    try:
+        # Get the payload
+        payload = json.loads(request.body)
+        
+        # Handle the webhook event through the signature service
+        result = SignatureService.handle_docusign_webhook(payload)
+        
+        if result:
+            return JsonResponse({'status': 'success'})
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Failed to process webhook'}, status=400)
+            
+    except Exception as e:
+        logger.error(f"Error processing DocuSign webhook: {str(e)}")
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

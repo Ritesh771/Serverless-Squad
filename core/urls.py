@@ -13,7 +13,9 @@ from .views import (
     dispute_analytics, vendor_onboarding_analytics, chat_query, chat_context,
     current_user_profile,
     # Advanced Features APIs
-    PincodeAIAnalyticsAPIView, AdvancedDisputeResolutionAPIView, AdvancedVendorBonusAPIView
+    PincodeAIAnalyticsAPIView, AdvancedDisputeResolutionAPIView, AdvancedVendorBonusAPIView,
+    # Webhook endpoints
+    docusign_webhook
 )
 from .auth_views import CustomTokenObtainPairView, send_otp, verify_otp, send_vendor_otp, verify_vendor_otp, register
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -76,6 +78,9 @@ urlpatterns = [
     # Analytics APIs
     path('api/analytics/disputes/', dispute_analytics, name='dispute-analytics'),
     path('api/analytics/vendor-onboarding/', vendor_onboarding_analytics, name='vendor-onboarding-analytics'),
+    
+    # Webhook endpoints
+    path('webhooks/docusign/', docusign_webhook, name='docusign-webhook'),
     
     # API URLs
     path('api/', include(router.urls)),
