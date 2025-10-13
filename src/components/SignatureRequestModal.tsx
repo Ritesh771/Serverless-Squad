@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSignatureService } from '../services/signatureService';
+import { signatureService } from '../services/signatureService';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
@@ -27,11 +27,12 @@ const SignatureRequestModal: React.FC<SignatureRequestModalProps> = ({
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // In a real implementation, you would call the signature service
-      // For now, we'll simulate the request
+      // Call the signature service to request signature
+      const result = await signatureService.requestSignature(bookingId);
+      
       toast({
         title: "Signature Requested",
-        description: "Signature request has been sent to the customer.",
+        description: result.message || "Signature request has been sent to the customer.",
       });
       
       onSignatureRequested();

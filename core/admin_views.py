@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.core.cache import caches, cache
-from django.db.models import Count, Avg, Q
+from django.db.models import Count, Avg, Q, Sum
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
 
-from .models import User, Booking, Service, AuditLog, NotificationLog, PincodeAnalytics, BusinessAlert
+from .models import User, Booking, Service, AuditLog, NotificationLog, PincodeAnalytics, BusinessAlert, Signature, Payment, Dispute, VendorApplication
 from .permissions import IsSuperAdmin, IsAdminUser
 from .notification_service import NotificationService
 from . import tasks
@@ -867,6 +867,161 @@ def business_alerts(request):
             'total': total_count,
             'total_pages': (total_count + per_page - 1) // per_page
         }
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def admin_live_dashboard(request):
+    """Live admin dashboard with real-time data for ops managers and super admins"""
+    
+    # Get user role for role-specific data
+    user_role = request.user.role
+    
+    # Real-time booking statistics
+    today = timezone.now().date()
+    current_time = timezone.now()
+    
+    # Booking stats
+    total_bookings_today = Booking.objects.filter(created_at__date=today).count()
+    pending_bookings = Booking.objects.filter(status='pending').count()
+    in_progress_bookings = Booking.objects.filter(status='in_progress').count()
+    completed_bookings_today = Booking.objects.filter(
+        status__in=['completed', 'signed'],
+        completion_date__date=today
+    ).count()
+    
+    # Signature stats
+    pending_signatures = Signature.objects.filter(status='pending').count()
+    expired_signatures = Signature.objects.filter(
+        status='pending',
+        expires_at__lt=current_time
+    ).count()
+    
+    # Payment stats
+    pending_payments = Payment.objects.filter(status='pending').count()
+    on_hold_payments = Payment.objects.filter(status='on_hold').count()
+    
+    # Vendor stats
+    total_vendors = User.objects.filter(role='vendor', is_active=True).count()
+    available_vendors = User.objects.filter(
+        role='vendor', 
+        is_active=True, 
+        is_available=True
+    ).count()
+    
+    # Recent alerts
+    recent_alerts = BusinessAlert.objects.filter(
+        status='active',
+        created_at__gte=current_time - timedelta(hours=24)
+    ).order_by('-created_at')[:10]
+    
+    # Recent activities
+    recent_activities = AuditLog.objects.filter(
+        timestamp__gte=current_time - timedelta(hours=24)
+    ).select_related('user').order_by('-timestamp')[:20]
+    
+    # Pincode hotspots (high demand areas)
+    high_demand_pincodes = PincodeAnalytics.objects.filter(
+        date=today,
+        total_bookings__gt=5
+    ).order_by('-total_bookings')[:10]
+    
+    # Response data based on user role
+    dashboard_data = {
+        'role': user_role,
+        'timestamp': current_time.isoformat(),
+        'booking_stats': {
+            'total_today': total_bookings_today,
+            'pending': pending_bookings,
+            'in_progress': in_progress_bookings,
+            'completed_today': completed_bookings_today,
+            'completion_rate': round((completed_bookings_today / total_bookings_today * 100), 2) if total_bookings_today > 0 else 0
+        },
+        'signature_stats': {
+            'pending': pending_signatures,
+            'expired': expired_signatures,
+            'pending_48h_plus': Signature.objects.filter(
+                status='pending',
+                requested_at__lt=current_time - timedelta(hours=48)
+            ).count()
+        },
+        'payment_stats': {
+            'pending': pending_payments,
+            'on_hold': on_hold_payments,
+            'total_hold_amount': float(Payment.objects.filter(
+                status='on_hold'
+            ).aggregate(Sum('amount'))['amount__sum'] or 0)
+        },
+        'vendor_stats': {
+            'total': total_vendors,
+            'available': available_vendors,
+            'utilization_rate': round((available_vendors / total_vendors * 100), 2) if total_vendors > 0 else 0
+        },
+        'alerts': [
+            {
+                'id': str(alert.id),
+                'type': alert.alert_type,
+                'severity': alert.severity,
+                'title': alert.title,
+                'description': alert.description,
+                'created_at': alert.created_at.isoformat(),
+                'related_booking_id': str(alert.related_booking.id) if alert.related_booking else None
+            }
+            for alert in recent_alerts
+        ],
+        'recent_activities': [
+            {
+                'id': str(activity.id),
+                'user': activity.user.username,
+                'user_role': activity.user.role,
+                'action': activity.action,
+                'resource_type': activity.resource_type,
+                'resource_id': activity.resource_id,
+                'timestamp': activity.timestamp.isoformat()
+            }
+            for activity in recent_activities
+        ],
+        'high_demand_areas': [
+            {
+                'pincode': analytics.pincode,
+                'total_bookings': analytics.total_bookings,
+                'available_vendors': analytics.available_vendors,
+                'demand_ratio': analytics.demand_ratio
+            }
+            for analytics in high_demand_pincodes
+        ]
+    }
+    
+    # Add role-specific data
+    if user_role == 'ops_manager':
+        # Add dispute stats for ops managers
+        open_disputes = Dispute.objects.filter(status='open').count()
+        investigating_disputes = Dispute.objects.filter(status='investigating').count()
+        
+        dashboard_data['dispute_stats'] = {
+            'open': open_disputes,
+            'investigating': investigating_disputes,
+            'total_active': open_disputes + investigating_disputes
+        }
+    
+    elif user_role == 'onboard_manager':
+        # Add vendor onboarding stats
+        pending_applications = VendorApplication.objects.filter(status='pending').count()
+        flagged_applications = VendorApplication.objects.filter(ai_flag=True, status='pending').count()
+        
+        dashboard_data['onboarding_stats'] = {
+            'pending_applications': pending_applications,
+            'flagged_applications': flagged_applications,
+            'approved_today': VendorApplication.objects.filter(
+                status='approved',
+                updated_at__date=today
+            ).count()
+        }
+    
+    return Response({
+        'status': 'success',
+        'data': dashboard_data
     })
 
 

@@ -15,11 +15,18 @@ interface AdminAction {
 }
 
 export default function AdminDashboard() {
-  // Fetch real dashboard stats from backend
-  const { data: dashboardStats, isLoading, error } = useQuery({
+  // Fetch live dashboard data from backend
+  const { data: liveDashboardData, isLoading, error } = useQuery({
+    queryKey: ['admin-live-dashboard'],
+    queryFn: adminService.getLiveDashboardData,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Fetch basic dashboard stats as fallback
+  const { data: dashboardStats } = useQuery({
     queryKey: ['admin-dashboard-stats'],
     queryFn: adminService.getDashboardStats,
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 60000, // Refresh every minute
   });
 
   // Removed WebSocket connection for real-time updates to fix superadmin login issues
@@ -53,24 +60,30 @@ export default function AdminDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardCard
-          title="Total Users"
-          value={dashboardStats?.activity_stats?.unique_users_24h?.toString() || "0"}
-          icon={Users}
-          description="Active users (24h)"
-        />
-        <DashboardCard
-          title="Platform Activity"
-          value={dashboardStats?.activity_stats?.total_actions_24h?.toString() || "0"}
+          title="Total Bookings Today"
+          value={liveDashboardData?.data?.booking_stats?.total_today?.toString() || "0"}
           icon={Activity}
-          description="Actions (24h)"
+          description="Bookings created today"
         />
         <DashboardCard
-          title="Pincodes Served"
-          value={dashboardStats?.pincode_stats?.total_pincodes_served?.toString() || "0"}
+          title="Pending Signatures"
+          value={liveDashboardData?.data?.signature_stats?.pending?.toString() || "0"}
+          icon={AlertCircle}
+          description="Awaiting customer sign-off"
+        />
+        <DashboardCard
+          title="Available Vendors"
+          value={liveDashboardData?.data?.vendor_stats?.available?.toString() || "0"}
+          icon={Users}
+          description="Active vendors"
+        />
+        <DashboardCard
+          title="Payment Holds"
+          value={liveDashboardData?.data?.payment_stats?.on_hold?.toString() || "0"}
           icon={DollarSign}
-          description="Active areas"
+          description="Requiring review"
         />
       </div>
 
@@ -78,18 +91,58 @@ export default function AdminDashboard() {
         {/* Recent Activity */}
         <Card className="card-elevated">
           <CardHeader>
-            <CardTitle>Top Admin Actions</CardTitle>
+            <CardTitle>Recent System Activity</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3 text-sm">
-              {dashboardStats?.activity_stats?.top_actions?.map((action: AdminAction, index: number) => (
+              {liveDashboardData?.data?.recent_activities?.slice(0, 5).map((activity: any, index: number) => (
                 <div key={index} className="p-3 border border-border rounded-lg">
-                  <p className="font-medium">{action.action}</p>
-                  <p className="text-xs text-muted-foreground">{action.count} times today</p>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{activity.action}</p>
+                      <p className="text-xs text-muted-foreground">{activity.resource_type} by {activity.user}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(activity.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
                 </div>
               )) || (
                 <div className="text-center py-4 text-muted-foreground">
-                  No recent admin actions
+                  No recent system activity
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* System Alerts */}
+        <Card className="card-elevated">
+          <CardHeader>
+            <CardTitle>Active Alerts</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 text-sm">
+              {liveDashboardData?.data?.alerts?.slice(0, 5).map((alert: any, index: number) => (
+                <div key={index} className="p-3 border border-border rounded-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{alert.title}</p>
+                      <p className="text-xs text-muted-foreground">{alert.description}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      alert.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                      alert.severity === 'high' ? 'bg-orange-100 text-orange-800' :
+                      alert.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      {alert.severity}
+                    </span>
+                  </div>
+                </div>
+              )) || (
+                <div className="text-center py-4 text-muted-foreground">
+                  No active alerts
                 </div>
               )}
             </div>

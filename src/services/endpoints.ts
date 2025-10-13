@@ -126,10 +126,12 @@ export const ENDPOINTS = {
     EDIT_HISTORY: '/admin-dashboard/edit-history/',
     EXPORT_HISTORY: '/admin-dashboard/edit-history/export/',
     DASHBOARD_STATS: '/admin-dashboard/dashboard/stats/',
+    LIVE_DASHBOARD: '/admin-dashboard/dashboard/live/',
     NOTIFICATIONS: '/admin-dashboard/notifications/',
     NOTIFICATION_LOGS: '/admin-dashboard/notifications/logs/',
     BUSINESS_ALERTS: '/admin-dashboard/notifications/alerts/',
     PINCODE_ANALYTICS: '/admin-dashboard/analytics/pincode/',
+    CACHE_MANAGEMENT: '/admin-dashboard/cache/',
   },
 
   // Advanced AI Features

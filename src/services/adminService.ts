@@ -43,6 +43,25 @@ export const adminService = {
     return data;
   },
 
+  // Live Dashboard Data
+  async getLiveDashboardData(): Promise<unknown> {
+    const { data } = await api.get(ENDPOINTS.ADMIN.LIVE_DASHBOARD);
+    return data;
+  },
+
+  // Cache Management
+  async getCacheStats(): Promise<unknown> {
+    const { data } = await api.get(ENDPOINTS.ADMIN.CACHE_MANAGEMENT);
+    return data;
+  },
+
+  async clearCache(cacheType: string = 'all'): Promise<unknown> {
+    const { data } = await api.post(ENDPOINTS.ADMIN.CACHE_MANAGEMENT, {
+      cache_type: cacheType,
+    });
+    return data;
+  },
+
   // Notification Management
   async getNotificationStats(): Promise<unknown> {
     const { data } = await api.get(ENDPOINTS.ADMIN.NOTIFICATIONS);

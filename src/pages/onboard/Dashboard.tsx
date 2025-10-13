@@ -3,8 +3,10 @@ import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, UserCheck, UserX, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-// Removed useWebSocket import to fix WebSocket issues for superadmin role
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { adminService } from '@/services/adminService';
+import { Loader } from '@/components/Loader';
 
 interface VendorApplication {
   id: string;
@@ -17,21 +19,32 @@ interface VendorApplication {
 }
 
 export default function OnboardDashboard() {
-  const [recentApplications, setRecentApplications] = useState<VendorApplication[]>([
-    { id: '1', name: 'Mike Johnson', service: 'Plumbing', date: '2025-01-15', status: 'pending', ai_flag: true, flag_reason: 'Incomplete profile' },
-    { id: '2', name: 'Sarah Williams', service: 'Electrical', date: '2025-01-14', status: 'pending' },
-    { id: '3', name: 'Tom Davis', service: 'HVAC', date: '2025-01-13', status: 'under-review', ai_flag: true, flag_reason: 'Multiple applications' },
-  ]);
-
-  const [stats, setStats] = useState({
-    pending: 12,
-    underReview: 5,
-    approved: 23,
-    rejectionRate: 8,
-    flagged: 2
+  // Fetch live dashboard data from backend
+  const { data: liveDashboardData, isLoading, error } = useQuery({
+    queryKey: ['onboard-live-dashboard'],
+    queryFn: adminService.getLiveDashboardData,
+    refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Removed WebSocket connection for real-time updates to fix superadmin login issues
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="text-center">
+          <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
+          <h3 className="mt-2 text-lg font-semibold">Error Loading Dashboard</h3>
+          <p className="text-muted-foreground">Please try refreshing the page</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -45,33 +58,33 @@ export default function OnboardDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <DashboardCard
           title="Pending Applications"
-          value={stats.pending.toString()}
+          value={liveDashboardData?.data?.onboarding_stats?.pending_applications?.toString() || "0"}
           icon={Clock}
           description="Awaiting review"
         />
         <DashboardCard
-          title="Under Review"
-          value={stats.underReview.toString()}
-          icon={Users}
-          description="Being processed"
+          title="Flagged Applications"
+          value={liveDashboardData?.data?.onboarding_stats?.flagged_applications?.toString() || "0"}
+          icon={AlertTriangle}
+          description="Require attention"
         />
         <DashboardCard
-          title="Approved This Month"
-          value={stats.approved.toString()}
+          title="Approved Today"
+          value={liveDashboardData?.data?.onboarding_stats?.approved_today?.toString() || "0"}
           icon={UserCheck}
           trend={{ value: 15, isPositive: true }}
         />
         <DashboardCard
-          title="Rejection Rate"
-          value={`${stats.rejectionRate}%`}
-          icon={UserX}
-          description="Last 30 days"
+          title="Total Vendors"
+          value={liveDashboardData?.data?.vendor_stats?.total?.toString() || "0"}
+          icon={Users}
+          description="Active vendors"
         />
         <DashboardCard
-          title="Flagged Applications"
-          value={stats.flagged.toString()}
-          icon={AlertTriangle}
-          description="Require attention"
+          title="Available Vendors"
+          value={liveDashboardData?.data?.vendor_stats?.available?.toString() || "0"}
+          icon={UserCheck}
+          description="Currently available"
         />
       </div>
 
@@ -79,60 +92,31 @@ export default function OnboardDashboard() {
         {/* Recent Applications */}
         <Card className="lg:col-span-2 card-elevated">
           <CardHeader>
-            <CardTitle>Recent Applications</CardTitle>
+            <CardTitle>Recent System Activity</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentApplications.map((app) => (
-                <Link
-                  key={app.id}
-                  to={`/onboard/vendor-queue/${app.id}`}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted transition-colors"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{app.name}</p>
-                      {app.ai_flag && (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-warning/10 text-warning">
-                          <AlertTriangle className="h-3 w-3" />
-                          Flagged
-                        </span>
-                      )}
+              {liveDashboardData?.data?.recent_activities?.slice(0, 5).map((activity: any, index: number) => (
+                <div key={index} className="p-3 border border-border rounded-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium text-sm">{activity.action}</p>
+                      <p className="text-xs text-muted-foreground">{activity.resource_type} by {activity.user}</p>
                     </div>
-                    <p className="text-sm text-muted-foreground">{app.service}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                      app.status === 'pending'
-                        ? 'bg-warning/10 text-warning'
-                        : app.status === 'under-review'
-                        ? 'bg-primary/10 text-primary'
-                        : app.status === 'approved'
-                        ? 'bg-success/10 text-success'
-                        : 'bg-destructive/10 text-destructive'
-                    }`}>
-                      {app.status === 'approved' ? (
-                        <>
-                          <CheckCircle className="h-3 w-3" />
-                          {app.status.replace('-', ' ')}
-                        </>
-                      ) : app.status === 'rejected' ? (
-                        <>
-                          <XCircle className="h-3 w-3" />
-                          {app.status.replace('-', ' ')}
-                        </>
-                      ) : (
-                        app.status.replace('-', ' ')
-                      )}
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(activity.timestamp).toLocaleTimeString()}
                     </span>
-                    <p className="text-xs text-muted-foreground mt-1">{app.date}</p>
                   </div>
-                </Link>
-              ))}
+                </div>
+              )) || (
+                <div className="text-center py-4 text-muted-foreground">
+                  No recent activity
+                </div>
+              )}
             </div>
             <Link to="/onboard/vendor-queue">
               <button className="w-full mt-4 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-sm">
-                View All Applications
+                View Vendor Queue
               </button>
             </Link>
           </CardContent>
