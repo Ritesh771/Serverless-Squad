@@ -175,9 +175,7 @@ export default function CustomerProfile() {
             </Avatar>
             <h3 className="font-semibold text-lg">{profile.first_name} {profile.last_name}</h3>
             <p className="text-sm text-muted-foreground capitalize">Customer</p>
-            <Button variant="outline" size="sm" className="mt-4" disabled>
-              Change Photo
-            </Button>
+            
           </CardContent>
         </Card>
 
@@ -254,75 +252,7 @@ export default function CustomerProfile() {
       </div>
 
       {/* Password Change */}
-      <Card className="card-elevated">
-        <CardHeader>
-          <CardTitle>Change Password</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSavePassword} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="current_password">Current Password</Label>
-                <Input
-                  id="current_password"
-                  type="password"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new_password">New Password</Label>
-                <Input
-                  id="new_password"
-                  type="password"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm_password">Confirm New Password</Label>
-                <Input
-                  id="confirm_password"
-                  type="password"
-                  required
-                />
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <Button type="submit">Change Password</Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Saved Addresses */}
-      <Card className="card-elevated">
-        <CardHeader>
-          <CardTitle>Saved Addresses</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {addresses.length > 0 ? (
-            <div className="space-y-3">
-              {addresses.map((address) => (
-                <div key={address.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <p className="font-medium">{address.label}</p>
-                    <p className="text-sm text-muted-foreground">{address.address_line}</p>
-                    <p className="text-sm text-muted-foreground">Pincode: {address.pincode}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    {address.is_default && (
-                      <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">Default</span>
-                    )}
-                    <Button variant="outline" size="sm">Edit</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No saved addresses yet.</p>
-          )}
-          <Button className="mt-4">Add New Address</Button>
-        </CardContent>
-      </Card>
+      
     </div>
   );
 }
