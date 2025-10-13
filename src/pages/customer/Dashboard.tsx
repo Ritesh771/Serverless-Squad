@@ -13,9 +13,9 @@ import { Loader } from '@/components/Loader';
 
 export default function CustomerDashboard() {
   // Fetch real booking data
-  const { data: bookings, isLoading, error } = useQuery({
+  const { data: bookings, isLoading, error } = useQuery<Booking[]>({
     queryKey: ['customer-bookings'],
-    queryFn: bookingService.getBookings,
+    queryFn: () => bookingService.getBookings(),
   });
 
   // Fetch pending signatures
@@ -118,41 +118,51 @@ export default function CustomerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentBookings.map((booking) => (
-                <Link
-                  key={booking.id}
-                  to={`/customer/my-bookings/${booking.id}`}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted transition-colors"
-                >
-                  <div>
-                    <p className="font-medium">{booking.service}</p>
-                    <p className="text-sm text-muted-foreground">Vendor: {booking.vendor}</p>
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                        booking.status === 'completed'
-                          ? 'bg-success/10 text-success'
-                          : booking.status === 'pending'
-                          ? 'bg-warning/10 text-warning'
-                          : booking.status === 'signed'
-                          ? 'bg-primary/10 text-primary'
-                          : 'bg-secondary/10 text-secondary'
-                      }`}
-                    >
-                      {booking.status === 'signed' ? (
-                        <>
-                          <Check className="h-3 w-3" />
-                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                        </>
-                      ) : (
-                        booking.status.charAt(0).toUpperCase() + booking.status.slice(1)
-                      )}
-                    </span>
-                    <p className="text-xs text-muted-foreground mt-1">{booking.date}</p>
-                  </div>
-                </Link>
-              ))}
+              {recentBookings.map((booking) => {
+                const serviceName = booking.service_name || booking.service_details?.name || 'Service';
+                const vendorName = booking.vendor_name || 'Not assigned';
+                const scheduledDate = new Date(booking.scheduled_date).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                });
+                
+                return (
+                  <Link
+                    key={booking.id}
+                    to={`/customer/my-bookings/${booking.id}`}
+                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium">{serviceName}</p>
+                      <p className="text-sm text-muted-foreground">Vendor: {vendorName}</p>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                          booking.status === 'completed' || booking.status === 'signed'
+                            ? 'bg-success/10 text-success'
+                            : booking.status === 'pending'
+                            ? 'bg-warning/10 text-warning'
+                            : booking.status === 'in_progress'
+                            ? 'bg-blue-500/10 text-blue-600'
+                            : 'bg-secondary/10 text-secondary'
+                        }`}
+                      >
+                        {booking.status === 'signed' ? (
+                          <>
+                            <Check className="h-3 w-3" />
+                            {booking.status.replace('_', ' ').charAt(0).toUpperCase() + booking.status.replace('_', ' ').slice(1)}
+                          </>
+                        ) : (
+                          booking.status.replace('_', ' ').charAt(0).toUpperCase() + booking.status.replace('_', ' ').slice(1)
+                        )}
+                      </span>
+                      <p className="text-xs text-muted-foreground mt-1">{scheduledDate}</p>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
             <Link to="/customer/my-bookings">
               <Button variant="outline" className="w-full mt-4">

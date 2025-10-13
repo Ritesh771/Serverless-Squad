@@ -1,28 +1,79 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Calendar, MapPin } from 'lucide-react';
+import { Search, Calendar, MapPin, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-const mockBookings = [
-  { id: '1', service: 'Plumbing Repair', vendor: 'John Smith', date: '2025-01-15', address: '123 Main St', status: 'completed', price: 80 },
-  { id: '2', service: 'AC Maintenance', vendor: 'Sarah Johnson', date: '2025-01-10', address: '456 Oak Ave', status: 'signed', price: 120 },
-  { id: '3', service: 'Electrical Inspection', vendor: 'Mike Davis', date: '2025-01-08', address: '789 Pine Rd', status: 'completed', price: 100 },
-  { id: '4', service: 'Carpentry Work', vendor: 'Emma Wilson', date: '2025-01-05', address: '321 Elm St', status: 'pending', price: 150 },
-];
+import { bookingService } from '@/services/bookingService';
+import { toast } from 'sonner';
+import { Loader } from '@/components/Loader';
 
 export default function MyBookings() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
 
-  const filteredBookings = mockBookings.filter((booking) => {
-    const matchesSearch = booking.service.toLowerCase().includes(search.toLowerCase()) ||
-      booking.vendor.toLowerCase().includes(search.toLowerCase());
+  // Fetch bookings from backend
+  const { data: bookings, isLoading, error } = useQuery({
+    queryKey: ['bookings'],
+    queryFn: () => bookingService.getBookings(),
+    onError: (error: any) => {
+      toast.error('Failed to load bookings');
+      console.error('Error loading bookings:', error);
+    }
+  });
+
+  // Filter bookings based on search and filter
+  const filteredBookings = (bookings || []).filter((booking) => {
+    const serviceName = booking.service_name || booking.service_details?.name || '';
+    const vendorName = booking.vendor_name || '';
+    
+    const matchesSearch = serviceName.toLowerCase().includes(search.toLowerCase()) ||
+      vendorName.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filter === 'all' || booking.status.toLowerCase() === filter.toLowerCase();
     return matchesSearch && matchesFilter;
   });
+
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  // Get status badge color
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'completed':
+      case 'signed':
+        return 'bg-success/10 text-success';
+      case 'pending':
+      case 'confirmed':
+        return 'bg-warning/10 text-warning';
+      case 'in_progress':
+        return 'bg-blue-500/10 text-blue-600';
+      case 'cancelled':
+      case 'disputed':
+        return 'bg-destructive/10 text-destructive';
+      default:
+        return 'bg-primary/10 text-primary';
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -60,52 +111,55 @@ export default function MyBookings() {
 
         <TabsContent value={filter} className="mt-6">
           <div className="grid grid-cols-1 gap-4">
-            {filteredBookings.map((booking) => (
-              <Card key={booking.id} className="card-elevated hover:shadow-lg transition-shadow">
-                <CardContent className="p-4 md:p-6">
-                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                    <div className="space-y-3 flex-1">
-                      <div>
-                        <h3 className="text-lg font-semibold">{booking.service}</h3>
-                        <p className="text-sm text-muted-foreground">Vendor: {booking.vendor}</p>
+            {filteredBookings.map((booking) => {
+              const serviceName = booking.service_name || booking.service_details?.name || 'Service';
+              const vendorName = booking.vendor_name || 'Not assigned';
+              const scheduledDate = formatDate(booking.scheduled_date);
+              const pincode = booking.pincode || 'N/A';
+              
+              return (
+                <Card key={booking.id} className="card-elevated hover:shadow-lg transition-shadow">
+                  <CardContent className="p-4 md:p-6">
+                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                      <div className="space-y-3 flex-1">
+                        <div>
+                          <h3 className="text-lg font-semibold">{serviceName}</h3>
+                          <p className="text-sm text-muted-foreground">Vendor: {vendorName}</p>
+                        </div>
+
+                        <div className="flex gap-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-4 w-4" />
+                            {scheduledDate}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <MapPin className="h-4 w-4" />
+                            {pincode}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                              getStatusColor(booking.status)
+                            }`}
+                          >
+                            {booking.status.replace('_', ' ').charAt(0).toUpperCase() + booking.status.replace('_', ' ').slice(1)}
+                          </span>
+                          <span className="text-sm font-semibold text-primary">₹{booking.total_price}</span>
+                        </div>
                       </div>
 
-                      <div className="flex gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          {booking.date}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-4 w-4" />
-                          {booking.address}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                            booking.status === 'completed'
-                              ? 'bg-success/10 text-success'
-                              : booking.status === 'pending'
-                              ? 'bg-warning/10 text-warning'
-                              : 'bg-primary/10 text-primary'
-                          }`}
-                        >
-                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                        </span>
-                        <span className="text-sm font-semibold text-primary">${booking.price}</span>
-                      </div>
+                      <Link to={`/customer/my-bookings/${booking.id}`} className="w-full md:w-auto">
+                        <Button variant="outline" size="sm" className="w-full md:w-auto">
+                          View Details
+                        </Button>
+                      </Link>
                     </div>
-
-                    <Link to={`/customer/my-bookings/${booking.id}`} className="w-full md:w-auto">
-                      <Button variant="outline" size="sm" className="w-full md:w-auto">
-                        View Details
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
           {filteredBookings.length === 0 && (

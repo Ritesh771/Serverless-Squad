@@ -1,195 +1,37 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Calendar, MapPin, User, DollarSign, FileText, Image as ImageIcon, Star, Clock, CreditCard } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, User, DollarSign, FileText, Image as ImageIcon, Star, Clock, CreditCard, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { PaymentTimeline } from '@/components/PaymentTimeline';
-import { StripePaymentForm } from '@/components/StripePaymentForm';
-import api from '@/services/api';
-import { ENDPOINTS } from '@/services/endpoints';
-
-interface Photo {
-  id: string;
-  image: string;
-  image_type: 'before' | 'after' | 'additional';
-  description: string;
-  uploaded_at: string;
-  uploaded_by: {
-    id: string;
-    name: string;
-  };
-}
-
-interface Payment {
-  id: string;
-  amount: number;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'on_hold';
-  payment_type: 'automatic' | 'manual';
-  created_at: string;
-  processed_at?: string;
-  updated_at: string;
-  hold_reason?: string;
-}
-
-interface Booking {
-  id: string;
-  service: {
-    name: string;
-  };
-  vendor: {
-    name: string;
-    phone: string;
-  };
-  scheduled_date: string;
-  customer_notes: string;
-  total_price: number;
-  status: string;
-  pincode: string;
-  address_line?: string;
-  photos: Photo[];
-  payment?: Payment;
-}
-
-// Mock data for bookings
-const mockBookings: Record<string, Booking> = {
-  '1': {
-    id: '1',
-    service: {
-      name: 'Plumbing Repair'
-    },
-    vendor: {
-      name: 'John Smith',
-      phone: '+1 234 567 8900'
-    },
-    scheduled_date: '2025-01-15T10:00:00Z',
-    customer_notes: 'Kitchen faucet is leaking',
-    total_price: 80,
-    status: 'completed',
-    pincode: '12345',
-    address_line: '123 Main St, Apartment 4B',
-    photos: [
-      {
-        id: '1',
-        image: 'https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?w=300',
-        image_type: 'before',
-        description: 'Before repair - leaking faucet',
-        uploaded_at: '2025-01-15T09:30:00Z',
-        uploaded_by: {
-          id: 'vendor1',
-          name: 'John Smith'
-        }
-      },
-      {
-        id: '2',
-        image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=300',
-        image_type: 'after',
-        description: 'After repair - fixed faucet',
-        uploaded_at: '2025-01-15T11:30:00Z',
-        uploaded_by: {
-          id: 'vendor1',
-          name: 'John Smith'
-        }
-      }
-    ],
-    payment: {
-      id: 'p1',
-      amount: 80,
-      status: 'pending',
-      payment_type: 'automatic',
-      created_at: '2025-01-15T09:00:00Z',
-      updated_at: '2025-01-15T09:00:00Z'
-    }
-  },
-  '2': {
-    id: '2',
-    service: {
-      name: 'AC Maintenance'
-    },
-    vendor: {
-      name: 'Sarah Johnson',
-      phone: '+1 234 567 8901'
-    },
-    scheduled_date: '2025-01-10T14:00:00Z',
-    customer_notes: 'Regular maintenance check',
-    total_price: 120,
-    status: 'signed',
-    pincode: '12345',
-    address_line: '456 Oak Ave',
-    photos: [
-      {
-        id: '3',
-        image: 'https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?w=300',
-        image_type: 'before',
-        description: 'Before maintenance',
-        uploaded_at: '2025-01-10T13:30:00Z',
-        uploaded_by: {
-          id: 'vendor2',
-          name: 'Sarah Johnson'
-        }
-      },
-      {
-        id: '4',
-        image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=300',
-        image_type: 'after',
-        description: 'After maintenance',
-        uploaded_at: '2025-01-10T15:30:00Z',
-        uploaded_by: {
-          id: 'vendor2',
-          name: 'Sarah Johnson'
-        }
-      }
-    ],
-    payment: {
-      id: 'p2',
-      amount: 120,
-      status: 'completed',
-      payment_type: 'automatic',
-      created_at: '2025-01-10T09:00:00Z',
-      processed_at: '2025-01-10T16:00:00Z',
-      updated_at: '2025-01-10T16:00:00Z'
-    }
-  }
-};
+import { bookingService, type Booking } from '@/services/bookingService';
+import { Loader } from '@/components/Loader';
 
 export default function BookingDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [booking, setBooking] = useState<Booking | null>(null);
-  const [loading, setLoading] = useState(true);
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
-  const [showPaymentForm, setShowPaymentForm] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      fetchBookingDetails();
-    }
-  }, [id]);
-
-  const fetchBookingDetails = async () => {
-    try {
-      // First try to fetch from API
-      const response = await api.get(`${ENDPOINTS.CUSTOMER.BOOKING(id!)}/`);
-      setBooking(response.data);
-    } catch (error) {
-      // If API fails, use mock data
-      console.log('API not available, using mock data');
-      const mockBooking = mockBookings[id!];
-      if (mockBooking) {
-        setBooking(mockBooking);
-      } else {
-        toast.error('Booking not found');
+  // Fetch booking details from backend
+  const { data: booking, isLoading, error, refetch } = useQuery({
+    queryKey: ['booking', id],
+    queryFn: () => bookingService.getBooking(id!),
+    enabled: !!id,
+    meta: {
+      onError: (error: any) => {
+        toast.error('Failed to load booking details');
+        console.error('Error loading booking:', error);
       }
-    } finally {
-      setLoading(false);
     }
-  };
+  });
 
   const handleSubmitReview = () => {
     if (rating === 0) {
@@ -201,28 +43,17 @@ export default function BookingDetails() {
     setShowReviewForm(false);
   };
 
-  const handlePaymentSuccess = () => {
-    setShowPaymentForm(false);
-    toast.success('Payment processed successfully!');
-    // Refresh booking details to show updated payment status
-    fetchBookingDetails();
-  };
-
-  const handleCancelPayment = () => {
-    setShowPaymentForm(false);
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="w-full max-w-6xl mx-auto space-y-6 p-4 md:p-6">
         <div className="flex justify-center items-center h-64">
-          Loading...
+          <Loader />
         </div>
       </div>
     );
   }
 
-  if (!booking) {
+  if (error || !booking) {
     return (
       <div className="w-full max-w-6xl mx-auto space-y-6 p-4 md:p-6">
         <div className="text-center py-12">
@@ -242,23 +73,6 @@ export default function BookingDetails() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  if (showPaymentForm) {
-    return (
-      <div className="w-full max-w-6xl mx-auto space-y-6 p-4 md:p-6">
-        <Button variant="ghost" onClick={() => setShowPaymentForm(false)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Booking
-        </Button>
-        <StripePaymentForm 
-          bookingId={booking.id}
-          amount={booking.total_price * 100} // Convert to cents
-          onSuccess={handlePaymentSuccess}
-          onCancel={handleCancelPayment}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 p-4 md:p-6">
       <Button variant="ghost" onClick={() => navigate(-1)}>
@@ -268,17 +82,17 @@ export default function BookingDetails() {
 
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">{booking.service.name}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{booking.service_details?.name || booking.service_name || 'Service'}</h1>
           <p className="text-muted-foreground mt-1 text-sm md:text-base">Booking ID: #{booking.id}</p>
         </div>
         <Badge
           className={
-            booking.status === 'completed'
+            booking.status === 'signed'
               ? 'bg-success text-success-foreground'
+              : booking.status === 'completed'
+              ? 'bg-blue-500 text-blue-500-foreground'
               : booking.status === 'pending'
               ? 'bg-warning text-warning-foreground'
-              : booking.status === 'signed'
-              ? 'bg-primary text-primary-foreground'
               : 'bg-secondary text-secondary-foreground'
           }
         >
@@ -308,18 +122,16 @@ export default function BookingDetails() {
                 <MapPin className="h-5 w-5 text-primary mt-0.5" />
                 <div>
                   <p className="font-medium">Service Address</p>
-                  <p className="text-sm text-muted-foreground">{booking.address_line || 'Address not provided'}</p>
                   <p className="text-sm text-muted-foreground">Pincode: {booking.pincode}</p>
                 </div>
               </div>
 
-              {booking.vendor && (
+              {booking.vendor_name && (
                 <div className="flex items-start gap-3">
                   <User className="h-5 w-5 text-primary mt-0.5" />
                   <div>
                     <p className="font-medium">Vendor</p>
-                    <p className="text-sm text-muted-foreground">{booking.vendor.name}</p>
-                    <p className="text-sm text-muted-foreground">{booking.vendor.phone}</p>
+                    <p className="text-sm text-muted-foreground">{booking.vendor_name}</p>
                   </div>
                 </div>
               )}
@@ -334,36 +146,6 @@ export default function BookingDetails() {
             </div>
 
             <Separator />
-
-            {/* Photos */}
-            {booking.photos && booking.photos.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <ImageIcon className="h-5 w-5 text-primary" />
-                  <p className="font-medium">Job Photos</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  {booking.photos.map((photo) => (
-                    <div key={photo.id} className="relative">
-                      <img
-                        src={photo.image}
-                        alt={photo.description || 'Job photo'}
-                        className="w-full h-40 object-cover rounded-lg"
-                      />
-                      <Badge 
-                        className={`absolute top-2 left-2 ${photo.image_type === 'after' ? 'bg-green-100 text-green-800' : ''}`}
-                        variant={
-                          photo.image_type === 'before' ? 'destructive' :
-                          photo.image_type === 'after' ? 'secondary' : 'secondary'
-                        }
-                      >
-                        {photo.image_type.charAt(0).toUpperCase() + photo.image_type.slice(1)}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -376,40 +158,14 @@ export default function BookingDetails() {
             <CardContent>
               <div className="flex items-center justify-between mb-4">
                 <span className="text-muted-foreground">Total Amount</span>
-                <span className="text-2xl font-bold text-primary">${booking.total_price.toFixed(2)}</span>
+                <span className="text-2xl font-bold text-primary">₹{Number(booking.total_price).toFixed(2)}</span>
               </div>
               <p className="text-xs text-muted-foreground mb-4">
                 Payment processed securely via HomeServe Pro
               </p>
               
-              {/* Payment Timeline */}
-              {booking.payment && (
-                <div className="mt-4">
-                  <PaymentTimeline
-                    status={booking.payment.status}
-                    amount={booking.payment.amount}
-                    requestedAt={booking.payment.created_at}
-                    processedAt={booking.payment.processed_at}
-                    releasedAt={booking.payment.updated_at}
-                    holdReason={booking.payment.hold_reason}
-                  />
-                </div>
-              )}
-              
               {/* Payment Status Messages */}
-              {booking.payment?.status === 'completed' && (
-                <div className="mt-4 p-3 bg-success/10 rounded-lg border border-success/20">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-success" />
-                    <span className="text-success font-medium">Payment Completed</span>
-                  </div>
-                  <p className="text-xs text-success mt-1">
-                    Your payment has been processed successfully.
-                  </p>
-                </div>
-              )}
-              
-              {booking.payment?.status === 'pending' && booking.status === 'completed' && (
+              {booking.status === 'completed' && (
                 <div className="mt-4">
                   <Button 
                     className="w-full" 
@@ -424,15 +180,11 @@ export default function BookingDetails() {
                 </div>
               )}
               
-              {/* Manual Payment Option (if needed) */}
-              {booking.payment?.status === 'pending' && booking.status !== 'completed' && (
-                <Button 
-                  className="w-full mt-4" 
-                  onClick={() => setShowPaymentForm(true)}
-                >
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  Make Payment
-                </Button>
+              {booking.status === 'signed' && (
+                <div className="flex items-center text-success">
+                  <CheckCircle className="h-5 w-5 mr-2" />
+                  <span className="text-sm font-medium">Payment Completed</span>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -453,7 +205,7 @@ export default function BookingDetails() {
               <Button variant="outline" className="w-full">
                 Download Invoice
               </Button>
-              {booking.vendor && (
+              {booking.vendor_name && (
                 <Button variant="outline" className="w-full">
                   Contact Vendor
                 </Button>
@@ -461,7 +213,7 @@ export default function BookingDetails() {
             </CardContent>
           </Card>
 
-          {booking.status === 'completed' && (
+          {booking.status === 'signed' && (
             <Card className="card-elevated">
               <CardHeader>
                 <CardTitle>Rate & Review</CardTitle>

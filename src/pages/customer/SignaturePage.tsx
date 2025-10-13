@@ -5,10 +5,11 @@ import { PhotoReview } from '@/components/PhotoReview';
 import { DisputeForm } from '@/components/DisputeForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, AlertTriangle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/services/api';
 import { ENDPOINTS } from '@/services/endpoints';
+import { bookingService } from '@/services/bookingService';
 
 interface Photo {
   id: string;
@@ -43,6 +44,7 @@ export default function SignaturePage() {
   const [loading, setLoading] = useState(true);
   const [photosViewed, setPhotosViewed] = useState(false);
   const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -52,7 +54,7 @@ export default function SignaturePage() {
 
   const fetchBookingDetails = async () => {
     try {
-      const response = await api.get(`${ENDPOINTS.CUSTOMER.BOOKING(id!)}/`);
+      const response = await api.get(`${ENDPOINTS.BOOKINGS.DETAIL(id!)}`);
       setBooking(response.data);
     } catch (error) {
       toast.error('Failed to load booking details');
@@ -68,9 +70,10 @@ export default function SignaturePage() {
     }
 
     setSignature(signatureData);
+    setIsSigning(true);
     
     try {
-      const response = await api.post(ENDPOINTS.SIGNATURE.SIGN(id!), {
+      const response = await api.post(`${ENDPOINTS.SIGNATURES.SIGN(id!)}`, {
         signature_data: signatureData,
         satisfaction_rating: 5, // Default rating, could be made configurable
         comments: 'Service completed to satisfaction'
@@ -78,11 +81,13 @@ export default function SignaturePage() {
       
       toast.success('Signature saved successfully!');
       
+      // Wait a moment for the backend to process the payment
       setTimeout(() => {
         navigate(`/customer/my-bookings/${id}`);
       }, 1500);
     } catch (error) {
       toast.error('Failed to save signature');
+      setIsSigning(false);
     }
   };
 
@@ -102,7 +107,7 @@ export default function SignaturePage() {
     return (
       <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
         <div className="flex justify-center items-center h-64">
-          Loading...
+          <Loader2 className="h-8 w-8 animate-spin" />
         </div>
       </div>
     );
@@ -180,7 +185,7 @@ export default function SignaturePage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total Amount:</span>
                   <span className="font-bold text-primary">
-                    ${booking?.total_price?.toFixed(2) || '0.00'}
+                    ₹{booking?.total_price?.toFixed(2) || '0.00'}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -202,7 +207,16 @@ export default function SignaturePage() {
             </Button>
           </div>
 
-          <SignaturePad onSave={handleSave} />
+          {isSigning ? (
+            <Card className="card-elevated">
+              <CardContent className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mb-4" />
+                <p className="text-muted-foreground">Processing signature and payment...</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <SignaturePad onSave={handleSave} />
+          )}
 
           <Card className="bg-muted border-none">
             <CardContent className="pt-6">

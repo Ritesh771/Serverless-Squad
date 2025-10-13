@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -58,8 +59,13 @@ class UserViewSet(viewsets.ModelViewSet):
     filterset_fields = ['role', 'is_verified', 'pincode']
     
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action == 'create':
             permission_classes = [IsAdminUser]
+        elif self.action == 'destroy':
+            permission_classes = [IsAdminUser]
+        elif self.action in ['update', 'partial_update']:
+            # Allow users to update their own profile, admin can update any
+            permission_classes = [IsAuthenticated]
         else:
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
@@ -72,6 +78,55 @@ class UserViewSet(viewsets.ModelViewSet):
             return User.objects.filter(role__in=['customer', 'vendor'])
         else:
             return User.objects.filter(id=user.id)
+    
+    def perform_update(self, serializer):
+        # Ensure users can only update their own profile unless they're admin
+        user_to_update = self.get_object()
+        requesting_user = self.request.user
+        
+        # Debug logging
+        print(f"DEBUG: User {requesting_user.id} (role: {requesting_user.role}) trying to update user {user_to_update.id}")
+        
+        if requesting_user.role not in ['super_admin', 'onboard_manager', 'ops_manager']:
+            if user_to_update.id != requesting_user.id:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("You can only update your own profile")
+        
+        serializer.save()
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def current_user_profile(request):
+    """
+    Get or update current user's profile
+    """
+    user = request.user
+    
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+    
+    elif request.method == 'PATCH':
+        # Only allow updating specific fields for profile
+        allowed_fields = ['first_name', 'last_name', 'phone', 'pincode']
+        update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        
+        serializer = UserSerializer(user, data=update_data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            
+            # Log the action
+            AuditLogger.log_action(
+                user=request.user,
+                action='update',
+                resource_type='User',
+                resource_id=user.id,
+                request=request
+            )
+            
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
@@ -2198,7 +2253,21 @@ class VendorSearchAPIView(APIView):
             
             # Filter by service if provided
             if service_id:
-                vendors = vendors.filter(services__id=service_id)
+                try:
+                    service = Service.objects.get(id=service_id)
+                    # Filter vendors by checking if they have this service in their application
+                    # Use a more flexible matching approach
+                    vendor_applications = VendorApplication.objects.filter(
+                        status='approved'
+                    ).filter(
+                        Q(service_category__icontains=service.name) |
+                        Q(service_category__icontains=service.category) |
+                        Q(service_category=service.name) |
+                        Q(service_category=service.category)
+                    ).values_list('vendor_account_id', flat=True)
+                    vendors = vendors.filter(id__in=vendor_applications)
+                except Service.DoesNotExist:
+                    pass
             
             # Get vendor availability and ratings
             vendor_data = []

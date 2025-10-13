@@ -238,9 +238,9 @@ class AuthService {
     const roleRoutes: Record<string, string> = {
       customer: '/customer/dashboard',
       vendor: '/vendor/dashboard',
-      onboard_manager: '/onboard/dashboard',
-      ops_manager: '/ops/dashboard',
-      super_admin: '/admin/dashboard',
+      onboard_manager: '/onboard-manager/dashboard',
+      ops_manager: '/ops-manager/dashboard',
+      super_admin: '/super-admin/dashboard',
     };
     return roleRoutes[role] || '/customer/dashboard';
   }
