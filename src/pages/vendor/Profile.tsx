@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,43 +10,83 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { PhotoUpload } from '@/components/PhotoUpload';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import api from '@/services/api';
+import { Loader2 } from 'lucide-react';
 
 export default function VendorProfile() {
   const { user } = useAuth();
-  
+
+  // Fetch user profile data
+  const { data: profile, isLoading: profileLoading } = useQuery({
+    queryKey: ['user-profile'],
+    queryFn: () => api.get('/api/users/me/').then(res => res.data),
+  });
+
+  // Fetch performance metrics
+  const { data: performance, isLoading: performanceLoading } = useQuery({
+    queryKey: ['vendor-performance'],
+    queryFn: () => api.get('/api/performance-metrics/summary/').then(res => res.data),
+  });
+
   // Get user's full name or username
   const getUserDisplayName = () => {
-    if (user?.first_name && user?.last_name) {
-      return `${user.first_name} ${user.last_name}`;
+    if (profile?.first_name && profile?.last_name) {
+      return `${profile.first_name} ${profile.last_name}`;
     }
-    return user?.username || 'Vendor';
+    return profile?.username || user?.username || 'Vendor';
   };
-  
+
   // Get first initial for avatar
   const getUserInitials = () => {
     const displayName = getUserDisplayName();
     return displayName.charAt(0).toUpperCase();
   };
-  
+
   const displayName = getUserDisplayName();
-  
+
   const [name, setName] = useState(displayName);
-  const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState(user?.phone || '');
+  const [email, setEmail] = useState(profile?.email || user?.email || '');
+  const [phone, setPhone] = useState(profile?.phone || user?.phone || '');
   const [skills, setSkills] = useState('Plumbing, Leak Repair, Installation');
   const [experience, setExperience] = useState('5 years');
   const [bio, setBio] = useState('');
   const [documents, setDocuments] = useState<File[]>([]);
 
-  const handleSave = () => {
-    // TODO: Connect to backend API
-    toast.success('Profile updated successfully!');
+  // Update form when profile data loads
+  useEffect(() => {
+    if (profile) {
+      setName(getUserDisplayName());
+      setEmail(profile.email || '');
+      setPhone(profile.phone || '');
+    }
+  }, [profile]);
+
+  const handleSave = async () => {
+    try {
+      await api.patch('/api/users/me/', {
+        first_name: name.split(' ')[0],
+        last_name: name.split(' ').slice(1).join(' '),
+        phone: phone,
+      });
+      toast.success('Profile updated successfully!');
+    } catch (error) {
+      toast.error('Failed to update profile');
+    }
   };
 
   const handleDocumentUpload = (files: File[]) => {
     setDocuments(files);
     toast.success('Documents uploaded successfully!');
   };
+
+  if (profileLoading || performanceLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
@@ -72,15 +112,15 @@ export default function VendorProfile() {
             <div className="w-full space-y-3">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Rating</span>
-                <Badge variant="secondary">4.9/5.0</Badge>
+                <Badge variant="secondary">{performance?.avg_rating?.toFixed(1) || '0.0'}/5.0</Badge>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Jobs Completed</span>
-                <Badge variant="secondary">127</Badge>
+                <Badge variant="secondary">{performance?.completed_jobs || 0}</Badge>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Verified</span>
-                <Badge className="bg-success text-success-foreground">Yes</Badge>
+                <Badge className="bg-success text-success-foreground">{profile?.is_verified ? 'Yes' : 'No'}</Badge>
               </div>
             </div>
 

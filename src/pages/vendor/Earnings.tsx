@@ -3,9 +3,9 @@ import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DollarSign, TrendingUp, Calendar, ArrowUpRight, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import api from '@/services/api';
+import { useQuery } from '@tanstack/react-query';
+import { vendorService } from '@/services/vendorService';
 import { toast } from 'sonner';
-// Removed useWebSocket import to fix WebSocket issues
 
 interface Earning {
   id: string;
@@ -24,50 +24,50 @@ interface EarningsSummary {
 }
 
 export default function VendorEarnings() {
-  const [summary, setSummary] = useState<EarningsSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchEarningsSummary();
-  }, []);
-
-  // Removed WebSocket connection for real-time updates to fix WebSocket issues
-
-  const fetchEarningsSummary = async () => {
-    try {
-      const response = await api.get('/api/earnings/summary/');
-      setSummary(response.data);
-    } catch (error) {
-      toast.error('Failed to load earnings summary');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Fetch earnings summary using the new vendor service
+  const { data: earningsSummary, isLoading, error } = useQuery({
+    queryKey: ['vendor-earnings-summary'],
+    queryFn: () => vendorService.getEarningsSummary(),
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'released': return 'text-success';
-      case 'approved': return 'text-info';
+      case 'paid': return 'text-success';
       case 'pending': return 'text-warning';
-      case 'on_hold': return 'text-destructive';
+      case 'cancelled': return 'text-destructive';
       default: return 'text-muted-foreground';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'released': return 'Released';
-      case 'approved': return 'Approved';
+      case 'paid': return 'Paid';
       case 'pending': return 'Pending';
-      case 'on_hold': return 'On Hold';
+      case 'cancelled': return 'Cancelled';
       default: return status;
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="text-center">
+          <p className="text-destructive mb-4">Failed to load earnings data</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-primary text-primary-foreground rounded"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -84,25 +84,25 @@ export default function VendorEarnings() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardCard
           title="Total Earnings"
-          value={`$${summary?.total_earnings.toFixed(2) || '0.00'}`}
+          value={`$${earningsSummary?.summary?.total_earnings?.toFixed(2) || '0.00'}`}
           icon={DollarSign}
           description="All time"
         />
         <DashboardCard
           title="This Month"
-          value={`$${(summary?.total_earnings || 0 * 0.2).toFixed(2)}`}
+          value={`$${((earningsSummary?.summary?.total_earnings || 0) * 0.2).toFixed(2)}`}
           icon={TrendingUp}
           trend={{ value: 12, isPositive: true }}
         />
         <DashboardCard
           title="Pending Payouts"
-          value={`$${summary?.pending_earnings.toFixed(2) || '0.00'}`}
+          value={`$${earningsSummary?.summary?.pending_earnings?.toFixed(2) || '0.00'}`}
           icon={Calendar}
           description="Pending approval"
         />
         <DashboardCard
           title="This Week"
-          value={`$${(summary?.total_earnings || 0 * 0.05).toFixed(2)}`}
+          value={`$${((earningsSummary?.summary?.total_earnings || 0) * 0.05).toFixed(2)}`}
           icon={ArrowUpRight}
           trend={{ value: 8, isPositive: true }}
         />
@@ -115,22 +115,22 @@ export default function VendorEarnings() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {summary?.recent_earnings.map((earning) => (
+            {earningsSummary?.recent_transactions?.map((transaction) => (
               <Link
-                key={earning.id}
-                to={`/vendor/earnings/${earning.id}`}
+                key={transaction.id}
+                to={`/vendor/earnings/${transaction.id}`}
                 className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted transition-colors"
               >
                 <div>
-                  <p className="font-medium">{earning.booking_service}</p>
+                  <p className="font-medium">{transaction.service}</p>
                   <p className="text-sm text-muted-foreground">
-                    {earning.customer_name} • {new Date(earning.created_at).toLocaleDateString()}
+                    Booking #{transaction.booking_id} • {new Date(transaction.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-primary">${parseFloat(earning.amount).toFixed(2)}</p>
-                  <span className={`text-xs ${getStatusColor(earning.status)}`}>
-                    {getStatusText(earning.status)}
+                  <p className="font-bold text-primary">${transaction.amount.toFixed(2)}</p>
+                  <span className={`text-xs ${getStatusColor(transaction.status)}`}>
+                    {getStatusText(transaction.status)}
                   </span>
                 </div>
               </Link>

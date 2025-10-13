@@ -8,11 +8,11 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Sum, Count
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import json
 import logging
 
@@ -110,7 +110,7 @@ def current_user_profile(request):
     
     elif request.method == 'PATCH':
         # Only allow updating specific fields for profile
-        allowed_fields = ['first_name', 'last_name', 'phone', 'pincode']
+        allowed_fields = ['first_name', 'last_name', 'phone', 'pincode', 'is_available']
         update_data = {k: v for k, v in request.data.items() if k in allowed_fields}
         
         serializer = UserSerializer(user, data=update_data, partial=True)
@@ -257,6 +257,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 
 
 
+    @action(detail=True, methods=['post'], permission_classes=[IsVendor])
     def request_signature(self, request, pk=None):
         """Request customer signature for completed booking"""
         booking = get_object_or_404(Booking, pk=pk, vendor=request.user)
@@ -409,19 +410,106 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Payment.objects.filter(booking__customer=user)
         return Payment.objects.none()
     
-    @action(detail=True, methods=['post'], permission_classes=[IsOpsManager])
-    def process_manual_payment(self, request, pk=None):
-        """Process manual payment by ops manager"""
-        payment = get_object_or_404(Payment, pk=pk)
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def get_client_secret(self, request):
+        """Get client secret for a payment intent"""
+        payment_intent_id = request.data.get('payment_intent_id')
         
-        success = PaymentService.process_manual_payment(payment.id, request.user)
-        
-        if success:
-            return Response({'message': 'Payment processed successfully'})
-        else:
+        if not payment_intent_id:
             return Response(
-                {'error': 'Failed to process payment'}, 
+                {'error': 'payment_intent_id is required'}, 
                 status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get payment record
+            payment = Payment.objects.get(
+                stripe_payment_intent_id=payment_intent_id,
+                booking__customer=request.user
+            )
+            
+            # Retrieve payment intent from Stripe
+            import stripe
+            from django.conf import settings
+            
+            stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+            
+            if stripe.api_key:
+                intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+                return Response({
+                    'client_secret': intent.client_secret,
+                    'status': intent.status,
+                    'amount': intent.amount,
+                    'currency': intent.currency
+                })
+            else:
+                # Mock response for development
+                return Response({
+                    'client_secret': f'pi_mock_{payment_intent_id}_secret',
+                    'status': 'requires_payment_method',
+                    'amount': payment.amount * 100,
+                    'currency': 'inr'
+                })
+                
+        except Payment.DoesNotExist:
+            return Response(
+                {'error': 'Payment not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def confirm_payment(self, request, pk=None):
+        """Confirm payment completion from frontend"""
+        payment = get_object_or_404(Payment, pk=pk, booking__customer=request.user)
+        payment_intent_id = request.data.get('payment_intent_id')
+        status = request.data.get('status')
+        
+        if not payment_intent_id or not status:
+            return Response(
+                {'error': 'payment_intent_id and status are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Update payment status
+            if status == 'succeeded':
+                payment.status = 'completed'
+                payment.stripe_charge_id = payment_intent_id  # Store the payment intent ID as charge ID
+                payment.processed_at = timezone.now()
+                payment.save()
+                
+                # Update booking status to signed
+                booking = payment.booking
+                if booking.status == 'completed':
+                    booking.status = 'signed'
+                    booking.save()
+                
+                AuditLogger.log_action(
+                    user=request.user,
+                    action='payment_process',
+                    resource_type='Payment',
+                    resource_id=str(payment.id),
+                    request=request
+                )
+                
+                return Response({'message': 'Payment confirmed successfully'})
+            else:
+                payment.status = 'failed'
+                payment.save()
+                return Response(
+                    {'error': 'Payment failed'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+        except Exception as e:
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -1294,65 +1382,151 @@ def get_role_context(user, role):
             }
             for booking in bookings
         ]
-    
     elif role == 'vendor':
-        # Get vendor's bookings
-        bookings = Booking.objects.filter(vendor=user).order_by('-created_at')[:5]
+        # Get vendor's jobs
+        jobs = Job.objects.filter(vendor=user).order_by('-created_at')[:5]
         context['suggested_actions'] = [
-            'Upload photos for service',
-            'Request signature from customer',
-            'View my calendar',
-            'Check pending jobs'
+            'Upload job photos',
+            'Request customer signature',
+            'View my calendar'
         ]
         context['recent_activities'] = [
             {
-                'type': 'booking',
-                'id': str(booking.id),
-                'service': booking.service.name,
-                'status': booking.get_status_display(),
-                'date': booking.scheduled_date.isoformat()
+                'type': 'job',
+                'id': str(job.id),
+                'service': job.service.name,
+                'status': job.get_status_display(),
+                'date': job.scheduled_date.isoformat()
             }
-            for booking in bookings
+            for job in jobs
+        ]
+    elif role in ['admin', 'onboard_manager', 'ops_manager']:
+        # Get admin's recent activities
+        recent_activities = ActivityLog.objects.filter(user=user).order_by('-created_at')[:5]
+        context['suggested_actions'] = [
+            'Approve vendor applications',
+            'Monitor pending signatures',
+            'Resolve disputes'
+        ]
+        context['recent_activities'] = [
+            {
+                'type': activity.action,
+                'id': str(activity.id),
+                'description': activity.description,
+                'date': activity.created_at.isoformat()
+            }
+            for activity in recent_activities
         ]
     
-    elif role in ['admin', 'onboard_manager', 'ops_manager']:
-        # Get pending vendors for onboard managers
-        if role == 'onboard_manager':
-            pending_vendors = User.objects.filter(role='vendor', is_verified=False)[:5]
-            context['suggested_actions'] = [
-                'Approve pending vendors',
-                'Review vendor applications',
-                'View vendor queue'
-            ]
-            context['recent_activities'] = [
-                {
-                    'type': 'vendor_application',
-                    'id': str(vendor.id),
-                    'name': vendor.get_full_name(),
-                    'date': vendor.date_joined.isoformat()
-                }
-                for vendor in pending_vendors
-            ]
-        else:
-            # For ops managers and admins
-            pending_signatures = Signature.objects.filter(status='pending')[:5]
-            context['suggested_actions'] = [
-                'Monitor pending signatures',
-                'Resolve customer disputes',
-                'View system analytics'
-            ]
-            context['recent_activities'] = [
-                {
-                    'type': 'signature',
-                    'id': str(signature.id),
-                    'booking_id': str(signature.booking.id),
-                    'customer': signature.booking.customer.get_full_name(),
-                    'date': signature.requested_at.isoformat()
-                }
-                for signature in pending_signatures
-            ]
-    
     return context
+
+
+def generate_ai_response(message, role):
+    """Generate AI-like response for general queries"""
+    # This is a simple rule-based response generator
+    # In a real implementation, this would connect to an AI service
+    
+    responses = {
+        'hello': 'Hello! How can I help you today?',
+        'hi': 'Hi there! What can I assist you with?',
+        'help': 'I can help you with various tasks based on your role. Try asking about your bookings, service completion, or signature approvals.',
+        'thanks': 'You\'re welcome! Is there anything else I can help you with?',
+        'thank you': 'You\'re welcome! Let me know if you need any further assistance.'
+    }
+    
+    message_lower = message.lower()
+    for key, response in responses.items():
+        if key in message_lower:
+            return response
+    
+    # Default response
+    role_prompts = {
+        'customer': 'As a customer, you can ask me about your bookings, service completion, or signature approvals.',
+        'vendor': 'As a vendor, you can ask me about your jobs, uploading photos, requesting signatures, or viewing your calendar.',
+        'admin': 'As an admin, you can ask me about vendor approvals, monitoring signatures, or resolving disputes.',
+        'onboard_manager': 'As an onboard manager, you can ask me about vendor applications or approval processes.',
+        'ops_manager': 'As an operations manager, you can ask me about monitoring signatures, payments, or system analytics.'
+    }
+    
+    return f"I understand you're asking about '{message}'. {role_prompts.get(role, 'I can help with various tasks in the system.')}"
+
+
+@csrf_exempt
+def chatbot_query(request):
+    """Handle chatbot queries with streaming responses and context"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        user_id = data.get('user_id')
+        role = data.get('role')
+        message = data.get('message')
+        context = data.get('context', {})
+        
+        if not all([user_id, role, message]):
+            return JsonResponse({'error': 'Missing required fields: user_id, role, message'}, status=400)
+        
+        # Get user object
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        # Process message based on role
+        response_text = process_chat_message(user, role, message)
+        
+        # Generate suggestions based on role
+        suggestions = []
+        role_hints = []
+        
+        if role == 'customer':
+            suggestions = ["Track my bookings", "View job photos", "Request signature help"]
+            role_hints = ["customer-dashboard", "booking-tracker"]
+        elif role == 'vendor':
+            suggestions = ["Upload job photos", "Request customer signature", "View my calendar"]
+            role_hints = ["vendor-jobs", "signature-request"]
+        elif role == 'onboard_manager':
+            suggestions = ["Review new vendor profiles", "Approve vendor applications", "View vendor statistics"]
+            role_hints = ["vendor-queue", "vendor-analytics"]
+        elif role == 'ops_manager':
+            suggestions = ["Monitor pending signatures", "Resolve disputes", "View system analytics"]
+            role_hints = ["signature-vault", "dispute-resolution"]
+        elif role == 'super_admin':
+            suggestions = ["Manage system logs", "Assign user roles", "Clear cache"]
+            role_hints = ["audit-logs", "user-management"]
+        
+        # Log chat action
+        AuditLogger.log_action(
+            user=user,
+            action='chatbot_query',
+            resource_type='Chatbot',
+            resource_id='chatbot_query',
+            new_values={'message': message, 'response': response_text}
+        )
+        
+        return JsonResponse({
+            'response': response_text,
+            'suggestions': suggestions,
+            'roleHints': role_hints
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Error processing chatbot query: {str(e)}")
+        # Log error action
+        try:
+            AuditLogger.log_action(
+                user=request.user if hasattr(request, 'user') else None,
+                action='chatbot_query_error',
+                resource_type='Chatbot',
+                resource_id='chatbot_query',
+                new_values={'error': str(e)}
+            )
+        except:
+            pass
+        return JsonResponse({'error': 'Internal server error'}, status=500)
 
 
 # Workflow handlers for each role
@@ -2280,9 +2454,17 @@ class VendorSearchAPIView(APIView):
                     is_active=True
                 ).first()
                 
-                # Get vendor rating (mock for now, would be from completed bookings)
-                # In a real implementation, this would be calculated from signature ratings
-                rating = 4.5  # Mock rating
+                # Get vendor rating from performance metrics
+                rating = 0.0
+                total_jobs = 0
+                try:
+                    if hasattr(vendor, 'performance_metrics'):
+                        rating = vendor.performance_metrics.avg_rating
+                        total_jobs = vendor.performance_metrics.completed_jobs
+                except:
+                    # Fallback to 0 if no performance metrics exist
+                    rating = 0.0
+                    total_jobs = 0
                 
                 # Get travel time from vendor's location to customer
                 customer_pincode = request.user.pincode
@@ -2303,7 +2485,7 @@ class VendorSearchAPIView(APIView):
                     'phone': vendor.phone,
                     'pincode': vendor.pincode,
                     'rating': rating,
-                    'total_jobs': 25,  # Mock data
+                    'total_jobs': total_jobs,
                     'availability': {
                         'day_of_week': availability.day_of_week if availability else None,
                         'start_time': availability.start_time if availability else None,
@@ -2467,6 +2649,534 @@ class AdvancedVendorBonusAPIView(APIView):
             logger.error(f"Advanced vendor bonus analysis failed: {str(e)}")
             return Response(
                 {'error': 'Failed to analyze vendor bonuses', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class VendorDashboardAPIView(APIView):
+    """Vendor dashboard with real-time data and job management"""
+    permission_classes = [IsAuthenticated, IsVendor]
+
+    def get(self, request):
+        """Get vendor dashboard data"""
+        vendor = request.user
+
+        try:
+            # Get today's jobs
+            today = timezone.now().date()
+            todays_jobs = Booking.objects.filter(
+                vendor=vendor,
+                scheduled_date=today
+            ).select_related('customer', 'service')
+
+            # Get this week's earnings
+            week_start = today - timedelta(days=today.weekday())
+            week_end = week_start + timedelta(days=6)
+            weekly_bookings = Booking.objects.filter(
+                vendor=vendor,
+                scheduled_date__range=[week_start, week_end],
+                status__in=['completed', 'signed']
+            )
+
+            weekly_earnings = sum(booking.total_price for booking in weekly_bookings if booking.total_price)
+
+            # Get pending jobs count
+            pending_jobs = Booking.objects.filter(
+                vendor=vendor,
+                status__in=['confirmed', 'in_progress']
+            ).count()
+
+            # Get performance metrics
+            try:
+                performance = vendor.performance_metrics
+                completion_rate = performance.completion_rate
+                avg_rating = performance.avg_rating
+                total_jobs = performance.total_jobs
+                completed_jobs = performance.completed_jobs
+                cancelled_jobs = performance.cancelled_jobs
+                on_time_rate = performance.on_time_rate
+            except PerformanceMetrics.DoesNotExist:
+                # Create performance metrics if they don't exist
+                performance = PerformanceMetrics.objects.create(vendor=vendor)
+                completion_rate = 0
+                avg_rating = 0
+                total_jobs = 0
+                completed_jobs = 0
+                cancelled_jobs = 0
+                on_time_rate = 0
+
+            # Get today's schedule with real data
+            todays_schedule = []
+            for job in todays_jobs:
+                todays_schedule.append({
+                    'id': str(job.id),
+                    'service_name': job.service.name,
+                    'customer_name': job.customer.get_full_name(),
+                    'scheduled_time': job.scheduled_time.strftime('%I:%M %p') if job.scheduled_time else 'TBD',
+                    'status': job.status,
+                    'pincode': job.pincode,
+                    'estimated_duration': job.estimated_service_duration_minutes or job.service.duration_minutes,
+                })
+
+            # Get recent activity (bookings, payments, signatures)
+            recent_activity = []
+            
+            # Recent bookings
+            recent_bookings = Booking.objects.filter(vendor=vendor).order_by('-created_at')[:3]
+            for booking in recent_bookings:
+                recent_activity.append({
+                    'id': str(booking.id),
+                    'type': 'booking',
+                    'description': f'New booking for {booking.service.name}',
+                    'timestamp': booking.created_at.isoformat(),
+                    'amount': float(booking.total_price) if booking.total_price else None,
+                })
+            
+            # Recent payments
+            recent_payments = Payment.objects.filter(booking__vendor=vendor).order_by('-created_at')[:2]
+            for payment in recent_payments:
+                recent_activity.append({
+                    'id': str(payment.id),
+                    'type': 'payment',
+                    'description': f'Payment received for booking {payment.booking.id}',
+                    'timestamp': payment.created_at.isoformat(),
+                    'amount': float(payment.amount),
+                })
+
+            return Response({
+                'stats': {
+                    'total_jobs': total_jobs,
+                    'completed_jobs': completed_jobs,
+                    'pending_jobs': pending_jobs,
+                    'cancelled_jobs': cancelled_jobs,
+                    'total_earnings': float(weekly_earnings),  # Using weekly as total for now
+                    'pending_earnings': 0,  # TODO: Calculate from earnings model
+                    'average_rating': avg_rating,
+                    'completion_rate': completion_rate,
+                },
+                'performance_metrics': {
+                    'completion_rate': completion_rate,
+                    'average_response_time': 30,  # TODO: Calculate from actual data
+                    'customer_satisfaction': avg_rating,
+                    'signature_success_rate': 85,  # TODO: Calculate from signature data
+                    'total_jobs': total_jobs,
+                    'on_time_percentage': on_time_rate,
+                },
+                'todays_schedule': todays_schedule,
+                'recent_activity': recent_activity,
+            })
+
+        except Exception as e:
+            logger.error(f"Vendor dashboard error: {str(e)}")
+            return Response(
+                {'error': 'Failed to load dashboard data'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def post(self, request):
+        """Update vendor availability"""
+        vendor = request.user
+        is_available = request.data.get('is_available')
+
+        if is_available is None:
+            return Response(
+                {'error': 'is_available field is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            vendor.is_available = is_available
+            vendor.save()
+
+            return Response({
+                'message': f'Availability updated to {"available" if is_available else "unavailable"}',
+                'is_available': is_available
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to update vendor availability: {str(e)}")
+            return Response(
+                {'error': 'Failed to update availability'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class VendorJobManagementAPIView(APIView):
+    """Job management for vendors - accept, complete, upload photos"""
+    permission_classes = [IsAuthenticated, IsVendor]
+
+    def get(self, request, booking_id=None):
+        """Get job details for vendor or list all jobs"""
+        if booking_id:
+            # Get specific job details
+            try:
+                booking = Booking.objects.select_related(
+                    'customer', 'service', 'address', 'signature'
+                ).get(id=booking_id, vendor=request.user)
+
+                # Get existing photos
+                photos = Photo.objects.filter(booking=booking).order_by('-created_at')
+
+                job_data = {
+                    'id': str(booking.id),
+                    'customer': {
+                        'name': booking.customer.get_full_name(),
+                        'phone': booking.customer.phone,
+                        'email': booking.customer.email,
+                    },
+                    'service': booking.service.name,
+                    'scheduled_date': booking.scheduled_date.isoformat(),
+                    'scheduled_time': booking.scheduled_time.strftime('%I:%M %p') if booking.scheduled_time else None,
+                    'address': booking.address.full_address if booking.address else None,
+                    'status': booking.status,
+                    'description': booking.description,
+                    'final_price': float(booking.total_price) if booking.total_price else 0,
+                    'special_instructions': booking.special_instructions,
+                    'photos': [{
+                        'id': photo.id,
+                        'image_type': photo.image_type,
+                        'image_url': photo.image.url if photo.image else None,
+                        'created_at': photo.created_at.isoformat(),
+                    } for photo in photos],
+                    'signature': {
+                        'status': booking.signature.status if booking.signature else None,
+                        'requested_at': booking.signature.requested_at.isoformat() if booking.signature else None,
+                        'signed_at': booking.signature.signed_at.isoformat() if booking.signature and booking.signature.signed_at else None,
+                    } if booking.signature else None,
+                }
+
+                return Response(job_data)
+
+            except Booking.DoesNotExist:
+                return Response(
+                    {'error': 'Job not found or access denied'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            except Exception as e:
+                logger.error(f"Failed to get job details: {str(e)}")
+                return Response(
+                    {'error': 'Failed to load job details'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            # Get all jobs for vendor
+            try:
+                status_filter = request.query_params.get('status')
+                bookings = Booking.objects.filter(vendor=request.user).select_related('customer', 'service')
+                
+                if status_filter:
+                    bookings = bookings.filter(status=status_filter)
+                
+                bookings = bookings.order_by('-created_at')
+                
+                jobs_data = []
+                for booking in bookings:
+                    jobs_data.append({
+                        'id': str(booking.id),
+                        'service_name': booking.service.name,
+                        'customer_name': booking.customer.get_full_name(),
+                        'customer_phone': booking.customer.phone,
+                        'scheduled_date': booking.scheduled_date.isoformat(),
+                        'scheduled_time': booking.scheduled_time.strftime('%I:%M %p') if booking.scheduled_time else None,
+                        'status': booking.status,
+                        'pincode': booking.pincode,
+                        'estimated_duration': booking.estimated_service_duration_minutes or booking.service.duration_minutes,
+                        'travel_time_to_location': booking.travel_time_to_location_minutes or 0,
+                        'travel_time_from_location': booking.travel_time_from_location_minutes or 0,
+                        'buffer_before': booking.buffer_before_minutes or 0,
+                        'buffer_after': booking.buffer_after_minutes or 0,
+                        'total_estimated_time': (
+                            (booking.estimated_service_duration_minutes or booking.service.duration_minutes) +
+                            (booking.travel_time_to_location_minutes or 0) +
+                            (booking.travel_time_from_location_minutes or 0) +
+                            (booking.buffer_before_minutes or 0) +
+                            (booking.buffer_after_minutes or 0)
+                        ),
+                        'photos': [],  # Could be populated if needed
+                        'signature_requested': booking.status == 'signature_requested',
+                        'signature_status': booking.signature.status if hasattr(booking, 'signature') and booking.signature else None,
+                    })
+                
+                return Response({'jobs': jobs_data})
+
+            except Exception as e:
+                logger.error(f"Failed to get vendor jobs: {str(e)}")
+                return Response(
+                    {'error': 'Failed to load jobs'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+    def post(self, request, booking_id, action):
+        """Perform job actions: accept, complete, upload_photos, request_signature"""
+        try:
+            booking = Booking.objects.get(id=booking_id, vendor=request.user)
+
+            if action == 'accept':
+                return self._accept_booking(booking, request)
+            elif action == 'start':
+                return self._start_booking(booking, request)
+            elif action == 'complete':
+                return self._complete_booking(booking, request)
+            elif action == 'upload_photos':
+                return self._upload_photos(booking, request)
+            elif action == 'request_signature':
+                return self._request_signature(booking, request)
+            else:
+                return Response(
+                    {'error': 'Invalid action'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except Booking.DoesNotExist:
+            return Response(
+                {'error': 'Job not found or access denied'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Job action failed: {str(e)}")
+            return Response(
+                {'error': 'Action failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _accept_booking(self, booking, request):
+        """Accept a booking"""
+        if booking.status != 'confirmed':
+            return Response(
+                {'error': 'Booking is not in a state that can be accepted'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        booking.status = 'in_progress'
+        booking.save()
+
+        # Log the action
+        AuditLogger.log_action(
+            user=request.user,
+            action='booking_accepted',
+            resource_type='Booking',
+            resource_id=str(booking.id),
+            old_values={'status': 'confirmed'},
+            new_values={'status': 'in_progress'}
+        )
+
+        return Response({'message': 'Booking accepted successfully'})
+
+    def _start_booking(self, booking, request):
+        """Start a booking (mark as in progress)"""
+        if booking.status not in ['confirmed', 'accepted']:
+            return Response(
+                {'error': 'Booking must be confirmed or accepted to start'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        booking.status = 'in_progress'
+        booking.actual_start_time = timezone.now()
+        booking.save()
+
+        # Log the action
+        AuditLogger.log_action(
+            user=request.user,
+            action='booking_started',
+            resource_type='Booking',
+            resource_id=str(booking.id),
+            old_values={'status': booking.status},
+            new_values={'status': 'in_progress', 'actual_start_time': booking.actual_start_time.isoformat()}
+        )
+
+        return Response({'message': 'Booking started successfully'})
+
+    def _complete_booking(self, booking, request):
+        """Complete a booking"""
+        if booking.status != 'in_progress':
+            return Response(
+                {'error': 'Booking must be in progress to complete'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        booking.status = 'completed'
+        booking.completion_date = timezone.now()
+        booking.save()
+
+        # Update performance metrics
+        try:
+            if hasattr(booking.vendor, 'performance_metrics'):
+                booking.vendor.performance_metrics.update_metrics_from_booking(booking)
+        except:
+            pass
+
+        # Log the action
+        AuditLogger.log_action(
+            user=request.user,
+            action='booking_completed',
+            resource_type='Booking',
+            resource_id=str(booking.id),
+            old_values={'status': 'in_progress'},
+            new_values={'status': 'completed', 'completion_date': booking.completion_date.isoformat()}
+        )
+
+        return Response({'message': 'Booking completed successfully'})
+
+    def _upload_photos(self, booking, request):
+        """Upload before/after photos"""
+        photos = request.FILES.getlist('photos')
+        image_type = request.data.get('image_type', 'after')
+
+        if not photos:
+            return Response(
+                {'error': 'No photos provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        uploaded_photos = []
+        for photo_file in photos:
+            photo = Photo.objects.create(
+                booking=booking,
+                image=photo_file,
+                image_type=image_type,
+                uploaded_by=request.user
+            )
+            uploaded_photos.append({
+                'id': photo.id,
+                'image_url': photo.image.url,
+                'image_type': photo.image_type,
+            })
+
+        return Response({
+            'message': f'{len(uploaded_photos)} photos uploaded successfully',
+            'photos': uploaded_photos
+        })
+
+    def _request_signature(self, booking, request):
+        """Request signature from customer"""
+        if booking.status != 'completed':
+            return Response(
+                {'error': 'Booking must be completed before requesting signature'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Create signature request
+            signature = Signature.objects.create(
+                booking=booking,
+                status='pending',
+                expires_at=timezone.now() + timedelta(hours=48)  # 48 hour expiry
+            )
+
+            # Send signature request via DocuSign or email
+            # This would integrate with DocuSign service
+            try:
+                from .signature_service import SignatureService
+                SignatureService.request_signature(signature)
+            except:
+                # Fallback to email notification
+                pass
+
+            booking.status = 'signature_requested'
+            booking.save()
+
+            # Log the action
+            AuditLogger.log_action(
+                user=request.user,
+                action='signature_requested',
+                resource_type='Booking',
+                resource_id=str(booking.id),
+                new_values={'signature_id': str(signature.id), 'status': 'signature_requested'}
+            )
+
+            return Response({
+                'message': 'Signature request sent to customer',
+                'signature_id': str(signature.id)
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to request signature: {str(e)}")
+            return Response(
+                {'error': 'Failed to request signature'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class VendorEarningsAPIView(APIView):
+    """Vendor earnings and payment tracking"""
+    permission_classes = [IsAuthenticated, IsVendor]
+
+    def get(self, request):
+        """Get vendor earnings data"""
+        vendor = request.user
+
+        try:
+            # Get all earnings for this vendor
+            earnings = Earnings.objects.filter(vendor=vendor).select_related('booking')
+
+            # Calculate totals
+            total_earnings = sum(earning.amount for earning in earnings if earning.status == 'released')
+            pending_earnings = sum(earning.amount for earning in earnings if earning.status == 'pending')
+
+            # Get earnings by month for the last 6 months
+            from django.db.models.functions import TruncMonth
+            from django.db.models import Sum, Count
+
+            six_months_ago = timezone.now() - timedelta(days=180)
+            monthly_earnings = earnings.filter(
+                created_at__gte=six_months_ago,
+                status='released'
+            ).extra(
+                select={'month': "strftime('%%Y-%%m', created_at)"}
+            ).values('month').annotate(
+                total_earnings=Sum('amount'),
+                job_count=Count('id')
+            ).order_by('month')
+
+            earnings_by_month = []
+            for entry in monthly_earnings:
+                earnings_by_month.append({
+                    'month': entry['month'].strftime('%Y-%m'),
+                    'earnings': float(entry['total_earnings']),
+                    'jobs': entry['job_count']
+                })
+
+            # Get recent earnings transactions
+            recent_earnings = earnings.order_by('-created_at')[:10]
+
+            transactions = []
+            for earning in recent_earnings:
+                transactions.append({
+                    'id': str(earning.id),
+                    'booking_id': str(earning.booking.id) if earning.booking else None,
+                    'service': earning.booking.service.name if earning.booking else 'N/A',
+                    'amount': float(earning.amount),
+                    'status': earning.status,
+                    'release_date': earning.release_date.isoformat() if earning.release_date else None,
+                    'created_at': earning.created_at.isoformat(),
+                })
+
+            # Get performance metrics
+            try:
+                performance = vendor.performance_metrics
+                avg_rating = performance.avg_rating
+                completed_jobs = performance.completed_jobs
+            except PerformanceMetrics.DoesNotExist:
+                # Create performance metrics if they don't exist
+                performance = PerformanceMetrics.objects.create(vendor=vendor)
+                avg_rating = 0
+                completed_jobs = 0
+
+            return Response({
+                'summary': {
+                    'total_earnings': float(total_earnings),
+                    'pending_earnings': float(pending_earnings),
+                    'completed_jobs': completed_jobs,
+                    'average_rating': avg_rating,
+                },
+                'earnings_by_month': earnings_by_month,
+                'recent_transactions': transactions,
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to get vendor earnings: {str(e)}")
+            return Response(
+                {'error': 'Failed to load earnings data'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

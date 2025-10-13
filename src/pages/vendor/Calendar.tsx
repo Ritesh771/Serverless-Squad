@@ -8,9 +8,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Clock, MapPin, Calendar as CalendarIcon, 
   TrendingUp, AlertTriangle, CheckCircle,
-  Car, Timer, Route
+  Car, Timer, Route, Loader2
 } from 'lucide-react';
 import { format, addMinutes, isSameDay } from 'date-fns';
+import { useQuery } from '@tanstack/react-query';
+import { bookingService } from '@/services/bookingService';
+import { schedulingService } from '@/services/schedulingService';
 
 interface BookingWithBuffer {
   id: string;
@@ -49,84 +52,63 @@ interface ScheduleOptimization {
 export default function VendorCalendar() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedTab, setSelectedTab] = useState('schedule');
-  const [optimization, setOptimization] = useState<ScheduleOptimization | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  // Mock data with smart buffering information
-  const bookingsWithBuffer: BookingWithBuffer[] = [
-    {
-      id: '1',
-      time: '09:00 AM',
-      customer: 'John Doe',
-      service: 'Plumbing Repair',
-      status: 'confirmed',
-      pincode: '110001',
-      travelTimeTo: 25,
-      travelTimeFrom: 25,
-      serviceDuration: 90,
-      bufferBefore: 15,
-      bufferAfter: 15,
-      actualStartTime: '08:20 AM',
-      actualEndTime: '11:10 AM',
-      optimization: {
-        score: 85,
-        suggestions: []
-      }
+  // Fetch vendor's bookings
+  const { data: allBookings, isLoading: bookingsLoading } = useQuery({
+    queryKey: ['vendor-bookings-calendar'],
+    queryFn: () => bookingService.getBookings(),
+  });
+
+  // Fetch schedule optimization for selected date
+  const { data: optimization, isLoading: optimizationLoading } = useQuery({
+    queryKey: ['vendor-schedule-optimization', date?.toISOString().split('T')[0]],
+    queryFn: () => {
+      if (!date) return null;
+      return schedulingService.getVendorOptimization(date.toISOString().split('T')[0]);
     },
-    {
-      id: '2',
-      time: '02:00 PM',
-      customer: 'Jane Smith',
-      service: 'Electrical Inspection',
-      status: 'pending',
-      pincode: '110045',
-      travelTimeTo: 35,
-      travelTimeFrom: 35,
-      serviceDuration: 60,
-      bufferBefore: 15,
-      bufferAfter: 15,
-      actualStartTime: '01:10 PM',
-      actualEndTime: '04:05 PM',
-      optimization: {
-        score: 65,
-        suggestions: ['High travel time - consider route optimization']
-      }
-    },
-    {
-      id: '3',
-      time: '04:30 PM',
-      customer: 'Bob Wilson',
-      service: 'HVAC Maintenance',
-      status: 'confirmed',
-      pincode: '110019',
-      travelTimeTo: 15,
-      travelTimeFrom: 15,
-      serviceDuration: 120,
-      bufferBefore: 15,
-      bufferAfter: 15,
-      actualStartTime: '04:00 PM',
-      actualEndTime: '07:05 PM',
-      optimization: {
-        score: 92,
-        suggestions: []
-      }
+    enabled: !!date,
+  });
+
+  // Filter bookings for selected date
+  const bookingsForDate = allBookings?.filter(booking => {
+    if (!date) return false;
+    const bookingDate = new Date(booking.scheduled_date);
+    return isSameDay(bookingDate, date);
+  }) || [];
+
+  // Transform bookings to include buffer information
+  const bookingsWithBuffer = bookingsForDate.map(booking => ({
+    id: booking.id,
+    time: new Date(booking.scheduled_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+    customer: booking.customer_name || `Customer #${booking.customer}`,
+    service: booking.service_name || `Service #${booking.service}`,
+    status: booking.status,
+    pincode: booking.pincode,
+    travelTimeTo: booking.travel_time_to_location_minutes || 30,
+    travelTimeFrom: booking.travel_time_from_location_minutes || 30,
+    serviceDuration: booking.estimated_service_duration_minutes || 60,
+    bufferBefore: booking.buffer_before_minutes || 15,
+    bufferAfter: booking.buffer_after_minutes || 15,
+    actualStartTime: format(addMinutes(new Date(booking.scheduled_date), -(booking.buffer_before_minutes || 15) - (booking.travel_time_to_location_minutes || 30)), 'hh:mm a'),
+    actualEndTime: format(addMinutes(new Date(booking.scheduled_date), 
+      (booking.estimated_service_duration_minutes || 60) + (booking.buffer_after_minutes || 15) + (booking.travel_time_from_location_minutes || 30)), 'hh:mm a'),
+    optimization: {
+      score: 85, // Default score, could be calculated from real data
+      suggestions: []
     }
-  ];
+  }));
 
+  // Calculate optimization summary from real data
   const optimizationSummary: ScheduleOptimization = {
-    total_bookings: 3,
-    total_working_time_minutes: 645, // 10h 45m
-    total_travel_time_minutes: 150,  // 2h 30m
-    total_service_time_minutes: 270, // 4h 30m
-    efficiency_score: 76,
-    optimization_suggestions: [
-      {
-        type: 'excessive_travel',
-        booking_id: '2',
-        suggestion: 'Consider rearranging to reduce travel time',
-        severity: 'medium'
-      }
-    ]
+    total_bookings: bookingsWithBuffer.length,
+    total_working_time_minutes: bookingsWithBuffer.reduce((total, booking) => 
+      total + booking.travelTimeTo + booking.serviceDuration + booking.travelTimeFrom + booking.bufferBefore + booking.bufferAfter, 0),
+    total_travel_time_minutes: bookingsWithBuffer.reduce((total, booking) => 
+      total + booking.travelTimeTo + booking.travelTimeFrom, 0),
+    total_service_time_minutes: bookingsWithBuffer.reduce((total, booking) => 
+      total + booking.serviceDuration, 0),
+    efficiency_score: optimization?.efficiency_score || 76,
+    optimization_suggestions: optimization?.optimization_suggestions || []
   };
 
   const getStatusColor = (status: string) => {
@@ -199,8 +181,19 @@ export default function VendorCalendar() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {bookingsWithBuffer.map((booking) => (
+                {bookingsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <span className="ml-2">Loading schedule...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {bookingsWithBuffer.length === 0 ? (
+                      <p className="text-muted-foreground text-center py-4">
+                        No bookings scheduled for this date.
+                      </p>
+                    ) : (
+                      bookingsWithBuffer.map((booking) => (
                     <div key={booking.id} className="space-y-3">
                       {/* Main booking info */}
                       <div className={`p-4 border rounded-lg ${getStatusColor(booking.status)}`}>
@@ -257,8 +250,10 @@ export default function VendorCalendar() {
                         </Alert>
                       )}
                     </div>
-                  ))}
-                </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

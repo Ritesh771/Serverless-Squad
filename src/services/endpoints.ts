@@ -48,6 +48,8 @@ export const ENDPOINTS = {
     LIST: '/api/payments/',
     DETAIL: (id: string) => `/api/payments/${id}/`,
     PROCESS_MANUAL: (id: string) => `/api/payments/${id}/process_manual_payment/`,
+    GET_CLIENT_SECRET: '/api/payments/get_client_secret/',
+    CONFIRM_PAYMENT: (id: string) => `/api/payments/${id}/confirm_payment/`,
   },
 
   // Addresses
@@ -65,6 +67,7 @@ export const ENDPOINTS = {
     LIST: '/api/users/',
     DETAIL: (id: number) => `/api/users/${id}/`,
     UPDATE: (id: number) => `/api/users/${id}/`,
+    PROFILE: '/api/users/me/',
   },
 
   // Vendor Features
@@ -77,6 +80,9 @@ export const ENDPOINTS = {
     REJECT_APPLICATION: (id: string) => `/api/vendor-applications/${id}/reject/`,
     EARNINGS: '/api/vendor-earnings/',
     PERFORMANCE: '/api/vendor-performance/',
+    DASHBOARD: '/api/vendor-dashboard/',
+    JOB_MANAGEMENT: '/api/vendor-job-management/',
+    EARNINGS_SUMMARY: '/api/vendor-earnings-summary/',
   },
 
   // Dynamic Pricing

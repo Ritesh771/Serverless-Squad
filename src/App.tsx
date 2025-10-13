@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 // Removed WebSocketProvider import to fix WebSocket issues
 import { Sidebar } from "@/components/Sidebar";
 import { Navbar } from "@/components/Navbar";
-// Removed ChatBot import to fix WebSocket issues for superadmin role
+import FloatingChatbot from "@/components/chat/FloatingChatbot";
 
 // Auth pages
 import Login from "./pages/auth/Login";
@@ -80,7 +80,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto bg-background">
           {children}
         </main>
-        {/* Removed ChatBot to fix WebSocket issues for superadmin role */}
+        <FloatingChatbot />
       </div>
     </div>
   );
