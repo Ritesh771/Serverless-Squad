@@ -1,4 +1,5 @@
 from django.urls import path, include
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     UserViewSet, AddressViewSet, ServiceViewSet, BookingViewSet,
@@ -10,6 +11,7 @@ from .views import (
     DisputeResolutionAPIView, VendorBonusAPIView, VendorAIAnalyticsAPIView,
     EnhancedSignatureAPIView, VendorDocumentViewSet,
     dispute_analytics, vendor_onboarding_analytics, chat_query, chat_context,
+    current_user_profile,
     # Advanced Features APIs
     PincodeAIAnalyticsAPIView, AdvancedDisputeResolutionAPIView, AdvancedVendorBonusAPIView
 )
@@ -41,6 +43,9 @@ urlpatterns = [
     path('auth/verify-otp/', verify_otp, name='verify_otp'),
     path('auth/vendor/send-otp/', send_vendor_otp, name='send_vendor_otp'),
     path('auth/vendor/verify-otp/', verify_vendor_otp, name='verify_vendor_otp'),
+    
+    # User Profile
+    path('api/users/me/', current_user_profile, name='current-user-profile'),
     
     # Vendor Search API
     path('api/vendor-search/', VendorSearchAPIView.as_view(), name='vendor-search'),

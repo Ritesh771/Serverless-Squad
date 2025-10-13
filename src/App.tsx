@@ -89,11 +89,23 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   const { user } = useAuth();
 
+  // Helper function to get role-based dashboard path
+  const getRoleDashboard = (role: string) => {
+    const roleMap: Record<string, string> = {
+      customer: '/customer/dashboard',
+      vendor: '/vendor/dashboard',
+      onboard_manager: '/onboard-manager/dashboard',
+      ops_manager: '/ops-manager/dashboard',
+      super_admin: '/super-admin/dashboard',
+    };
+    return roleMap[role] || '/customer/dashboard';
+  };
+
   return (
     <Routes>
       {/* Public routes */}
-      <Route path="/auth/login" element={user ? <Navigate to={`/${user.role.replace('_', '-')}/dashboard`} /> : <Login />} />
-      <Route path="/auth/register" element={user ? <Navigate to={`/${user.role.replace('_', '-')}/dashboard`} /> : <Register />} />
+      <Route path="/auth/login" element={user ? <Navigate to={getRoleDashboard(user.role)} replace /> : <Login />} />
+      <Route path="/auth/register" element={user ? <Navigate to={getRoleDashboard(user.role)} replace /> : <Register />} />
       <Route path="/auth/forgot-password" element={<ForgotPassword />} />
 
       {/* Customer routes */}

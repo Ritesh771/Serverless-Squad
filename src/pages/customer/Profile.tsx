@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
+import { Loader } from '@/components/Loader';
 import api from '@/services/api';
+import { ENDPOINTS } from '@/services/endpoints';
 
 interface Address {
   id: string;
@@ -28,7 +31,8 @@ interface UserProfile {
 }
 
 export default function CustomerProfile() {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
+  const queryClient = useQueryClient();
   const [profile, setProfile] = useState<UserProfile>({
     id: '',
     username: '',
@@ -38,44 +42,104 @@ export default function CustomerProfile() {
     phone: '',
     pincode: ''
   });
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
+  // Fetch current user profile
+  const { data: userProfile, isLoading, error } = useQuery({
+    queryKey: ['user-profile'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/users/me/');
+      return data;
+    }
+  });
+
+  // Sync fetched data with local state
   useEffect(() => {
-    fetchProfile();
-    fetchAddresses();
-  }, []);
+    if (userProfile) {
+      setProfile({
+        id: userProfile.id.toString(),
+        username: userProfile.username,
+        email: userProfile.email,
+        first_name: userProfile.first_name || '',
+        last_name: userProfile.last_name || '',
+        phone: userProfile.phone || '',
+        pincode: userProfile.pincode || ''
+      });
+    }
+  }, [userProfile]);
 
-  const fetchProfile = async () => {
-    try {
-      const response = await api.get('/api/users/me/');
-      setProfile(response.data);
-    } catch (error) {
+  // Show error toast
+  useEffect(() => {
+    if (error) {
       toast.error('Failed to load profile');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [error]);
 
-  const fetchAddresses = async () => {
-    try {
-      const response = await api.get('/api/addresses/');
-      setAddresses(response.data);
-    } catch (error) {
-      // Handle error silently as addresses might not exist yet
+  // Fetch addresses
+  const { data: addresses = [] } = useQuery({
+    queryKey: ['addresses'],
+    queryFn: async () => {
+      const { data } = await api.get(ENDPOINTS.ADDRESSES.LIST);
+      return data.results || data;
     }
-  };
+  });
+
+  // Update profile mutation
+  const updateProfileMutation = useMutation({
+    mutationFn: async (updateData: Partial<UserProfile>) => {
+      const { data } = await api.patch('/api/users/me/', updateData);
+      return data;
+    },
+    onSuccess: (data) => {
+      // Update auth context
+      const updatedUser = { ...user, ...data };
+      if (setUser) {
+        setUser(updatedUser);
+      }
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      
+      // Update profile state
+      setProfile({
+        id: data.id.toString(),
+        username: data.username,
+        email: data.email,
+        first_name: data.first_name || '',
+        last_name: data.last_name || '',
+        phone: data.phone || '',
+        pincode: data.pincode || ''
+      });
+      
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ['user-profile'] });
+      
+      toast.success('Profile updated successfully!');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Failed to update profile');
+    }
+  });
 
   const handleSaveProfile = async () => {
-    setSaving(true);
-    try {
-      await api.patch(`/api/users/${profile.id}/`, profile);
-      toast.success('Profile updated successfully!');
-    } catch (error) {
-      toast.error('Failed to update profile');
-    } finally {
-      setSaving(false);
+    const updateData = {
+      first_name: profile.first_name,
+      last_name: profile.last_name,
+      phone: profile.phone,
+      pincode: profile.pincode
+    };
+    
+    updateProfileMutation.mutate(updateData);
+  };
+
+  const handleCancel = () => {
+    if (userProfile) {
+      setProfile({
+        id: userProfile.id.toString(),
+        username: userProfile.username,
+        email: userProfile.email,
+        first_name: userProfile.first_name || '',
+        last_name: userProfile.last_name || '',
+        phone: userProfile.phone || '',
+        pincode: userProfile.pincode || ''
+      });
     }
   };
 
@@ -85,8 +149,12 @@ export default function CustomerProfile() {
     toast.success('Password change functionality will be implemented');
   };
 
-  if (loading) {
-    return <div className="flex justify-center items-center h-64">Loading...</div>;
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader />
+      </div>
+    );
   }
 
   return (
@@ -174,9 +242,11 @@ export default function CustomerProfile() {
             <Separator />
 
             <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={fetchProfile}>Cancel</Button>
-              <Button onClick={handleSaveProfile} disabled={saving}>
-                {saving ? 'Saving...' : 'Save Changes'}
+              <Button variant="outline" onClick={handleCancel} disabled={updateProfileMutation.isPending}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveProfile} disabled={updateProfileMutation.isPending}>
+                {updateProfileMutation.isPending ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           </CardContent>

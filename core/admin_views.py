@@ -37,8 +37,15 @@ class CacheManagementView(View):
     
     def get(self, request):
         """Get cache statistics and health information"""
-        if not request.user.is_authenticated or request.user.role not in ['super_admin', 'ops_manager']:
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        # Allow ops_manager, super_admin, and admin roles
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+            
+        if request.user.role not in ['super_admin', 'ops_manager', 'admin']:
+            return JsonResponse({
+                'error': 'Unauthorized',
+                'message': f'Your role ({request.user.role}) does not have permission to access cache management. Required roles: super_admin, ops_manager, admin'
+            }, status=403)
         
         cache_stats = self._get_cache_statistics()
         return JsonResponse({
@@ -49,8 +56,15 @@ class CacheManagementView(View):
     
     def post(self, request):
         """Clear specific cache categories"""
-        if not request.user.is_authenticated or request.user.role not in ['super_admin', 'ops_manager']:
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        # Allow ops_manager, super_admin, and admin roles
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+            
+        if request.user.role not in ['super_admin', 'ops_manager', 'admin']:
+            return JsonResponse({
+                'error': 'Unauthorized',
+                'message': f'Your role ({request.user.role}) does not have permission to clear cache. Required roles: super_admin, ops_manager, admin'
+            }, status=403)
         
         try:
             data = json.loads(request.body)

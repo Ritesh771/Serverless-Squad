@@ -8,6 +8,7 @@ export type { User };
 
 interface AuthContextType {
   user: User | null;
+  setUser: (user: User | null) => void;
   login: (username: string, password: string) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
   registerWithOTP: (identifier: string, userData: RegisterData, method?: 'sms' | 'email') => Promise<void>;
@@ -169,6 +170,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider
       value={{
         user,
+        setUser,
         login,
         register,
         registerWithOTP,

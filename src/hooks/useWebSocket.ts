@@ -15,6 +15,7 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 3; // Limit reconnection attempts
   const reconnectDelay = 5000; // 5 seconds
+  const connectionStartTime = useRef<number | null>(null);
 
   const connect = useCallback(() => {
     if (!user) return;
@@ -48,6 +49,7 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
       const wsUrl = `${wsProtocol}//${backendHost}:${backendPort}/ws/status/${user.id}/${user.role}/`;
       
       console.log('Connecting to WebSocket:', wsUrl);
+      connectionStartTime.current = Date.now();
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
@@ -55,6 +57,7 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
         setIsConnected(true);
         setIsConnecting(false);
         reconnectAttempts.current = 0; // Reset attempts on successful connection
+        connectionStartTime.current = null;
       };
 
       ws.current.onmessage = (event) => {
@@ -67,12 +70,27 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
       };
 
       ws.current.onclose = (event) => {
+        const wasConnected = isConnected;
         console.log('WebSocket disconnected', event);
         setIsConnected(false);
         setIsConnecting(false);
+        connectionStartTime.current = null;
 
-        // Only attempt to reconnect if we haven't exceeded max attempts
-        if (reconnectAttempts.current < maxReconnectAttempts && !reconnectTimeout.current) {
+        // If the connection was established for more than 30 seconds, reset reconnect attempts
+        if (wasConnected && connectionStartTime.current) {
+          const connectionDuration = Date.now() - connectionStartTime.current;
+          if (connectionDuration > 30000) {
+            reconnectAttempts.current = 0; // Reset if connection was stable for 30+ seconds
+          }
+        }
+
+        // Only attempt to reconnect if:
+        // 1. We haven't exceeded max attempts
+        // 2. The close wasn't clean (code 1000) or was due to network issues (code 1006)
+        // 3. We're not in the process of reconnecting already
+        if (reconnectAttempts.current < maxReconnectAttempts && 
+            (event.code === 1006 || event.code !== 1000) && 
+            !reconnectTimeout.current) {
           reconnectAttempts.current += 1;
           console.log(`Attempting to reconnect (${reconnectAttempts.current}/${maxReconnectAttempts}) in ${reconnectDelay/1000}s...`);
           
@@ -89,11 +107,13 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
         console.error('WebSocket error:', error);
         setIsConnected(false);
         setIsConnecting(false);
+        connectionStartTime.current = null;
         // Error will trigger onclose, which handles reconnection
       };
     } catch (error) {
       console.error('Failed to connect WebSocket:', error);
       setIsConnecting(false);
+      connectionStartTime.current = null;
     }
   }, [user, onMessage]);
 
@@ -109,6 +129,10 @@ export const useWebSocket = (onMessage: (data: WebSocketMessage) => void) => {
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
       }
+      setIsConnected(false);
+      setIsConnecting(false);
+      reconnectAttempts.current = 0;
+      connectionStartTime.current = null;
     };
   }, [user, connect]);
 
