@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuth, UserRole } from '@/context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
+import type { User } from '@/services/authService';
 import { useState, useEffect, ComponentType } from 'react';
 import {
   LayoutDashboard,
@@ -33,7 +34,7 @@ interface NavItem {
   icon: ComponentType<{ className?: string }>;
 }
 
-const roleNavigation: Record<UserRole, NavItem[]> = {
+const roleNavigation: Record<string, NavItem[]> = {
   customer: [
     { title: 'Dashboard', href: '/customer/dashboard', icon: LayoutDashboard },
     { title: 'Book Service', href: '/customer/book-service', icon: BookOpen },
@@ -47,19 +48,19 @@ const roleNavigation: Record<UserRole, NavItem[]> = {
     { title: 'Earnings', href: '/vendor/earnings', icon: DollarSign },
     { title: 'Profile', href: '/vendor/profile', icon: User },
   ],
-  onboard: [
+  onboard_manager: [
     { title: 'Dashboard', href: '/onboard/dashboard', icon: LayoutDashboard },
     { title: 'Vendor Queue', href: '/onboard/vendor-queue', icon: Users },
     { title: 'Approved Vendors', href: '/onboard/approved-vendors', icon: CheckCircle },
   ],
-  ops: [
+  ops_manager: [
     { title: 'Dashboard', href: '/ops/dashboard', icon: LayoutDashboard },
     { title: 'Bookings Monitor', href: '/ops/bookings-monitor', icon: MapPin },
     { title: 'Signature Vault', href: '/ops/signature-vault', icon: FileSignature },
     { title: 'Manual Payments', href: '/ops/manual-payments', icon: DollarSign },
     { title: 'Analytics', href: '/ops/analytics', icon: TrendingUp },
   ],
-  admin: [
+  super_admin: [
     { title: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
     { title: 'Users', href: '/admin/users', icon: Users },
     { title: 'Roles', href: '/admin/roles', icon: Shield },
@@ -81,6 +82,26 @@ export const Sidebar = () => {
   }, [navigate]);
 
   if (!user) return null;
+
+  // Helper function to get display name safely
+  const getDisplayName = (user: User) => {
+    if (user.first_name && user.last_name) {
+      return `${user.first_name} ${user.last_name}`;
+    }
+    if (user.first_name) {
+      return user.first_name;
+    }
+    if (user.username) {
+      return user.username;
+    }
+    return user.email || 'User';
+  };
+
+  // Helper function to get avatar initial safely
+  const getAvatarInitial = (user: User) => {
+    const displayName = getDisplayName(user);
+    return displayName.charAt(0).toUpperCase();
+  };
 
   const navItems = roleNavigation[user.role] || [];
 
@@ -147,10 +168,10 @@ export const Sidebar = () => {
         <div className="p-4 border-t border-border">
           <div className="flex items-center gap-3 mb-3">
             <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold">
-              {user.name.charAt(0).toUpperCase()}
+              {getAvatarInitial(user)}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+              <p className="text-sm font-medium text-foreground truncate">{getDisplayName(user)}</p>
               <p className="text-xs text-muted-foreground truncate">{user.email}</p>
             </div>
           </div>

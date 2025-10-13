@@ -1,7 +1,7 @@
 import api from './api';
 import { ENDPOINTS } from './endpoints';
 
-export interface Vendor {
+export interface VendorSearchResult {
   id: number;
   name: string;
   email: string;
@@ -10,7 +10,7 @@ export interface Vendor {
   rating: number;
   total_jobs: number;
   availability: {
-    day_of_week: string;
+    day_of_week: number;
     start_time: string;
     end_time: string;
   } | null;
@@ -20,126 +20,65 @@ export interface Vendor {
 }
 
 export interface VendorSearchResponse {
-  vendors: Vendor[];
+  vendors: VendorSearchResult[];
   total_vendors: number;
   pincode: string;
   demand_index: number;
 }
 
-export interface DemandDetails {
-  level: string;
-  demand_ratio: number;
-  total_bookings: number;
-  pending_bookings: number;
+export interface VendorApplication {
+  id: string;
+  user: number;
+  user_email: string;
+  user_phone: string;
+  status: 'pending' | 'approved' | 'rejected';
+  documents: any;
+  experience_years: number;
+  skills: string[];
+  preferred_pincodes: string[];
+  ai_risk_score?: number;
+  ai_flags?: any;
+  submitted_at: string;
+  reviewed_at?: string;
+  reviewed_by?: number;
 }
 
-export interface SupplyDetails {
-  level: string;
-  available_vendors: number;
-  busy_vendors: number;
-  effective_vendors: number;
+export interface VendorAvailability {
+  id: number;
+  vendor: number;
+  vendor_name: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  is_active: boolean;
+  primary_pincode: string;
+  service_area_pincodes: string[];
+  preferred_buffer_minutes: number;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface PerformanceDetails {
-  completion_rate: number;
-  avg_satisfaction: number;
-  has_data: boolean;
-}
-
-export interface DynamicPriceBreakdown {
-  base_price: number;
-  final_price: number;
-  price_change_percent: number;
-  factors: {
-    demand: {
-      level: string;
-      multiplier: number;
-      details: DemandDetails;
-    };
-    supply: {
-      level: string;
-      multiplier: number;
-      details: SupplyDetails;
-    };
-    time: {
-      factors: string[];
-      multiplier: number;
-    };
-    performance: {
-      multiplier: number;
-      details: PerformanceDetails;
-    };
-  };
-  total_multiplier: number;
-  surge_info: {
-    level: number;
-    label: string;
-    reasons: string[];
-  };
-}
-
-export interface PricingSuggestions {
-  current_price: DynamicPriceBreakdown;
-  cheapest_date: string;
-  cheapest_price: number;
-  savings: number;
-  best_times: Record<string, string>;
-  recommendations: Array<{
-    type: string;
-    message: string;
-    savings: number;
+export interface VendorEarnings {
+  total_earnings: number;
+  pending_earnings: number;
+  completed_jobs: number;
+  average_rating: number;
+  earnings_by_month: Array<{
+    month: string;
+    earnings: number;
+    jobs: number;
   }>;
 }
 
-export interface Photo {
-  id: string;
-  image: string;
-  image_type: 'before' | 'after' | 'additional';
-  description: string;
-  uploaded_at: string;
-  uploaded_by: {
-    id: string;
-    name: string;
-  };
+export interface VendorPerformance {
+  completion_rate: number;
+  average_response_time: number;
+  customer_satisfaction: number;
+  signature_success_rate: number;
+  total_jobs: number;
+  on_time_percentage: number;
 }
 
-export const vendorService = {
-  /**
-   * Search vendors by pincode
-   * @param pincode - The pincode to search vendors in
-   * @param serviceId - Optional service ID to filter vendors
-   * @returns Promise with vendor search results
-   */
-  searchVendors: async (pincode: string, serviceId?: number): Promise<VendorSearchResponse> => {
-    try {
-      const params: Record<string, string | number> = { pincode };
-      if (serviceId) {
-        params.service_id = serviceId;
-      }
-      
-      const response = await api.get(ENDPOINTS.VENDOR.SEARCH, { params });
-      return response.data;
-    } catch (error) {
-      throw new Error('Failed to search vendors');
-    }
-  },
-
-  /**
-   * Get vendor details by ID
-   * @param vendorId - The ID of the vendor
-   * @returns Promise with vendor details
-   */
-  getVendor: async (vendorId: number): Promise<Vendor> => {
-    try {
-      const response = await api.get(`/api/users/${vendorId}/`);
-      return response.data;
-    } catch (error) {
-      throw new Error('Failed to fetch vendor details');
-    }
-  },
-};
-
-// Add new interface for signature logs
 export interface SignatureLog {
   id: string;
   booking: {
@@ -168,142 +107,123 @@ export interface AuditLog {
   new_values: Record<string, string | number | boolean | null>;
 }
 
+export const vendorService = {
+  // Search vendors by pincode
+  async searchVendors(
+    pincode: string,
+    serviceId?: number
+  ): Promise<VendorSearchResponse> {
+    const params: any = { pincode };
+    if (serviceId) {
+      params.service_id = serviceId;
+    }
+
+    const { data } = await api.get(ENDPOINTS.VENDOR.SEARCH, { params });
+    return data;
+  },
+
+  // Get vendor applications (Onboard Manager)
+  async getApplications(status?: string): Promise<VendorApplication[]> {
+    const params = status ? { status } : {};
+    const { data } = await api.get(ENDPOINTS.VENDOR.APPLICATIONS, { params });
+    return data.results || data;
+  },
+
+  // Get vendor application details
+  async getApplication(id: string): Promise<VendorApplication> {
+    const { data } = await api.get(ENDPOINTS.VENDOR.APPLICATION_DETAIL(id));
+    return data;
+  },
+
+  // Approve vendor application
+  async approveApplication(id: string): Promise<{ message: string }> {
+    const { data } = await api.post(ENDPOINTS.VENDOR.APPROVE_APPLICATION(id));
+    return data;
+  },
+
+  // Reject vendor application
+  async rejectApplication(id: string, reason: string): Promise<{ message: string }> {
+    const { data } = await api.post(ENDPOINTS.VENDOR.REJECT_APPLICATION(id), { reason });
+    return data;
+  },
+
+  // Get vendor availability
+  async getAvailability(): Promise<VendorAvailability[]> {
+    const { data } = await api.get(ENDPOINTS.VENDOR.AVAILABILITY);
+    return data.results || data;
+  },
+
+  // Create/update vendor availability
+  async updateAvailability(availability: Partial<VendorAvailability>): Promise<VendorAvailability> {
+    const { data } = await api.post(ENDPOINTS.VENDOR.AVAILABILITY, availability);
+    return data;
+  },
+
+  // Get vendor earnings
+  async getEarnings(): Promise<VendorEarnings> {
+    const { data } = await api.get(ENDPOINTS.VENDOR.EARNINGS);
+    return data;
+  },
+
+  // Get vendor performance metrics
+  async getPerformance(): Promise<VendorPerformance> {
+    const { data } = await api.get(ENDPOINTS.VENDOR.PERFORMANCE);
+    return data;
+  },
+};
+
+// Onboard Manager Service
 export const onboardService = {
-  /**
-   * Get signature logs for a vendor application
-   * @param applicationId - The ID of the vendor application
-   * @returns Promise with signature logs
-   */
-  getSignatureLogs: async (applicationId: string): Promise<SignatureLog[]> => {
+  // Get vendor applications
+  async getApplications(status?: string): Promise<VendorApplication[]> {
+    const params = status ? { status } : {};
+    const { data } = await api.get(ENDPOINTS.VENDOR.APPLICATIONS, { params });
+    return data.results || data;
+  },
+
+  // Get vendor application details
+  async getApplication(id: string): Promise<VendorApplication> {
+    const { data } = await api.get(ENDPOINTS.VENDOR.APPLICATION_DETAIL(id));
+    return data;
+  },
+
+  // Approve vendor application
+  async approveApplication(id: string): Promise<{ message: string }> {
+    const { data } = await api.post(ENDPOINTS.VENDOR.APPROVE_APPLICATION(id));
+    return data;
+  },
+
+  // Reject vendor application
+  async rejectApplication(id: string, reason: string): Promise<{ message: string }> {
+    const { data } = await api.post(ENDPOINTS.VENDOR.REJECT_APPLICATION(id), { reason });
+    return data;
+  },
+
+  // Get signature logs for a vendor application (for compliance)
+  async getSignatureLogs(applicationId: string): Promise<SignatureLog[]> {
     try {
-      const response = await api.get(`/api/onboard/vendors/${applicationId}/signature_logs/`);
-      return response.data.signatures || [];
+      const { data } = await api.get(`/api/vendor-applications/${applicationId}/signature_logs/`);
+      return data.signatures || [];
     } catch (error) {
-      throw new Error('Failed to fetch signature logs');
+      console.error('Failed to fetch signature logs:', error);
+      return [];
     }
   },
 
-  /**
-   * Get edit history for a vendor application
-   * @param applicationId - The ID of the vendor application
-   * @returns Promise with edit history
-   */
-  getEditHistory: async (applicationId: string): Promise<AuditLog[]> => {
+  // Get edit history for a vendor application (audit trail)
+  async getEditHistory(applicationId: string): Promise<AuditLog[]> {
     try {
-      const response = await api.get(`/api/onboard/vendors/${applicationId}/edit_history/`);
-      return response.data;
+      const { data } = await api.get(`/api/vendor-applications/${applicationId}/edit_history/`);
+      return data.audit_logs || data;
     } catch (error) {
-      throw new Error('Failed to fetch edit history');
-    }
-  },
-};
-
-export const pricingService = {
-  /**
-   * Calculate dynamic price for a service
-   * @param serviceId - The service ID
-   * @param pincode - The customer pincode
-   * @param scheduledDatetime - Optional scheduled datetime
-   * @returns Promise with dynamic price breakdown
-   */
-  calculatePrice: async (
-    serviceId: number, 
-    pincode: string, 
-    scheduledDatetime?: string
-  ): Promise<DynamicPriceBreakdown> => {
-    try {
-      const params: Record<string, string | number> = {
-        service_id: serviceId,
-        pincode
-      };
-      
-      if (scheduledDatetime) {
-        params.scheduled_datetime = scheduledDatetime;
-      }
-      
-      const response = await api.get(ENDPOINTS.PRICING.CALCULATE, { params });
-      return response.data;
-    } catch (error) {
-      throw new Error('Failed to calculate dynamic price');
+      console.error('Failed to fetch edit history:', error);
+      return [];
     }
   },
 
-  /**
-   * Get pricing suggestions for a service
-   * @param serviceId - The service ID
-   * @param pincode - The customer pincode
-   * @returns Promise with pricing suggestions
-   */
-  getPriceSuggestions: async (
-    serviceId: number, 
-    pincode: string
-  ): Promise<PricingSuggestions> => {
-    try {
-      const response = await api.post(ENDPOINTS.PRICING.PREDICT, {
-        service_id: serviceId,
-        pincode,
-        days: 7
-      });
-      return response.data;
-    } catch (error) {
-      throw new Error('Failed to get pricing suggestions');
-    }
-  },
-};
-
-export const photoService = {
-  /**
-   * Upload photos for a booking
-   * @param bookingId - The booking ID
-   * @param photos - Array of photo files
-   * @param imageType - Type of photos (before/after/additional)
-   * @param description - Optional description
-   * @returns Promise with upload results
-   */
-  uploadPhotos: async (
-    bookingId: string,
-    photos: File[],
-    imageType: 'before' | 'after' | 'additional',
-    description?: string
-  ): Promise<Photo[]> => {
-    try {
-      const formData = new FormData();
-      
-      photos.forEach((photo) => {
-        formData.append('images', photo);
-      });
-      
-      formData.append('booking', bookingId);
-      formData.append('image_type', imageType);
-      if (description) {
-        formData.append('description', description);
-      }
-      
-      const response = await api.post('/api/photos/', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      return Array.isArray(response.data) ? response.data : [response.data];
-    } catch (error) {
-      throw new Error('Failed to upload photos');
-    }
-  },
-
-  /**
-   * Get photos for a booking
-   * @param bookingId - The booking ID
-   * @returns Promise with photos
-   */
-  getBookingPhotos: async (bookingId: string): Promise<Photo[]> => {
-    try {
-      const response = await api.get('/api/photos/', {
-        params: { booking: bookingId }
-      });
-      return response.data.results || response.data;
-    } catch (error) {
-      throw new Error('Failed to fetch booking photos');
-    }
+  // Update vendor application (edit-only mode with audit logging)
+  async updateApplication(id: string, updates: Partial<VendorApplication>): Promise<VendorApplication> {
+    const { data } = await api.patch(ENDPOINTS.VENDOR.APPLICATION_DETAIL(id), updates);
+    return data;
   },
 };

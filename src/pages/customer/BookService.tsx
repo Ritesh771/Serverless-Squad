@@ -11,48 +11,46 @@ import { CalendarIcon, Loader2, MapPin, Star, Clock, Users, TrendingUp, AlertTri
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import { vendorService, Vendor, pricingService, PricingSuggestions } from '@/services/vendorService';
-import api from '@/services/api';
-import { ENDPOINTS } from '@/services/endpoints';
-
-interface Service {
-  id: string;
-  name: string;
-  base_price: number;
-  duration_minutes: number;
-}
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { bookingService, Service } from '@/services/bookingService';
+import { vendorService, VendorSearchResult } from '@/services/vendorService';
+import { pricingService, DynamicPricing } from '@/services/pricingService';
+import { schedulingService } from '@/services/schedulingService';
 
 export default function BookService() {
-  const [services, setServices] = useState<Service[]>([]);
   const [serviceType, setServiceType] = useState('');
   const [date, setDate] = useState<Date>();
   const [address, setAddress] = useState('');
   const [pincode, setPincode] = useState('');
   const [description, setDescription] = useState('');
-  const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
   const [timeSlot, setTimeSlot] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [searchingVendors, setSearchingVendors] = useState(false);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [demandIndex, setDemandIndex] = useState<number | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<string>('');
-  const [pricingSuggestions, setPricingSuggestions] = useState<PricingSuggestions | null>(null);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchingVendors, setSearchingVendors] = useState(false);
+  const [vendors, setVendors] = useState<VendorSearchResult[]>([]);
+  const [dynamicPricing, setDynamicPricing] = useState<DynamicPricing | null>(null);
+  const [demandIndex, setDemandIndex] = useState<number | null>(null);
+  
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  // Load services on component mount
-  useEffect(() => {
-    fetchServices();
-  }, []);
+  // Fetch services from backend
+  const { data: services, isLoading: servicesLoading } = useQuery({
+    queryKey: ['services'],
+    queryFn: () => bookingService.getServices(),
+  });
 
-  const fetchServices = async () => {
-    try {
-      const response = await api.get(ENDPOINTS.SERVICE.LIST);
-      setServices(response.data.results || response.data);
-    } catch (error) {
-      toast.error('Failed to load services');
-    }
-  };
+  // Create booking mutation
+  const createBookingMutation = useMutation({
+    mutationFn: bookingService.createBooking,
+    onSuccess: () => {
+      toast.success('Service booked successfully!');
+      queryClient.invalidateQueries({ queryKey: ['customer-bookings'] });
+      navigate('/customer/my-bookings');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to book service');
+    },
+  });
 
   const timeSlots = [
     '09:00 AM - 11:00 AM',
@@ -95,46 +93,26 @@ export default function BookService() {
     }
 
     try {
-      const service = services.find((s) => s.id === serviceType);
-      if (!service) return;
-
-      const response = await pricingService.calculatePrice(
+      const scheduledDatetime = date ? date.toISOString() : undefined;
+      const pricing = await pricingService.getDynamicPrice(
         parseInt(serviceType),
         pincode,
-        date ? date.toISOString() : undefined
+        scheduledDatetime
       );
-
-      setEstimatedPrice(response.final_price);
+      
+      setDynamicPricing(pricing);
       
       // Show price change information
-      if (response.price_change_percent !== 0) {
-        const change = response.price_change_percent;
-        const surgeInfo = response.surge_info;
-        
+      const change = pricing.pricing.price_change_percent;
+      if (Math.abs(change) > 0) {
         toast.info(
-          `Price ${change > 0 ? 'increased' : 'decreased'} by ${Math.abs(change)}% due to demand`,
+          `Price ${change > 0 ? 'increased' : 'decreased'} by ${Math.abs(change).toFixed(1)}% due to demand`,
           {
-            description: `Base: $${response.base_price.toFixed(2)} → Final: $${response.final_price.toFixed(2)}`,
+            description: `Base: ₹${pricing.pricing.base_price} → Final: ₹${pricing.pricing.final_price}`,
             duration: 5000
           }
         );
-        
-        // Show surge information if applicable
-        if (surgeInfo.level > 0) {
-          toast.info(
-            `${surgeInfo.label} Pricing`,
-            {
-              description: surgeInfo.reasons.join(', '),
-              icon: surgeInfo.level > 1 ? <AlertTriangle className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />,
-              duration: 5000
-            }
-          );
-        }
       }
-      
-      // Get pricing suggestions
-      const suggestions = await pricingService.getPriceSuggestions(parseInt(serviceType), pincode);
-      setPricingSuggestions(suggestions);
     } catch (error) {
       toast.error('Failed to calculate dynamic price');
     }
@@ -147,31 +125,21 @@ export default function BookService() {
       return;
     }
 
-    setLoading(true);
-
-    try {
-      const service = services.find((s) => s.id === serviceType);
-      if (!service) {
-        throw new Error('Service not found');
-      }
-
-      const bookingData = {
-        service: parseInt(serviceType),
-        pincode,
-        scheduled_date: date.toISOString(),
-        customer_notes: description,
-        total_price: estimatedPrice || service.base_price,
-      };
-
-      const response = await api.post(ENDPOINTS.CUSTOMER.BOOKINGS, bookingData);
-      toast.success('Service booked successfully!');
-      navigate('/customer/my-bookings');
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to book service';
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
+    const service = services?.find((s) => s.id.toString() === serviceType);
+    if (!service) {
+      toast.error('Service not found');
+      return;
     }
+
+    const finalPrice = dynamicPricing?.pricing.final_price || parseFloat(service.base_price);
+
+    createBookingMutation.mutate({
+      service: parseInt(serviceType),
+      pincode,
+      scheduled_date: date.toISOString(),
+      customer_notes: description,
+      total_price: finalPrice.toString(),
+    });
   };
 
   return (

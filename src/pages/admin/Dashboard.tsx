@@ -1,75 +1,60 @@
 import { useState } from 'react';
 import { DashboardCard } from '@/components/DashboardCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Shield, Activity, DollarSign } from 'lucide-react';
+import { Users, Shield, Activity, DollarSign, AlertCircle } from 'lucide-react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
-
-interface SystemStat {
-  label: string;
-  value: string;
-  color: string;
-}
-
-interface AdminAction {
-  id: string;
-  action: string;
-  admin: string;
-  timestamp: string;
-}
+import { useQuery } from '@tanstack/react-query';
+import { adminService } from '@/services/adminService';
+import { Loader } from '@/components/Loader';
 
 export default function AdminDashboard() {
-  const [systemStats, setSystemStats] = useState<SystemStat[]>([
-    { label: 'System Status', value: 'Operational', color: 'text-success' },
-    { label: 'Server Load', value: '45%', color: 'text-primary' },
-    { label: 'Active Sessions', value: '342', color: 'text-primary' },
-    { label: 'API Response', value: '120ms', color: 'text-success' },
-  ]);
+  // Fetch real dashboard stats from backend
+  const { data: dashboardStats, isLoading, error } = useQuery({
+    queryKey: ['admin-dashboard-stats'],
+    queryFn: adminService.getDashboardStats,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
 
-  const [recentActions, setRecentActions] = useState<AdminAction[]>([
-    { id: '1', action: 'User role updated', admin: 'John', timestamp: '2 hours ago' },
-    { id: '2', action: 'System settings changed', admin: 'Sarah', timestamp: '5 hours ago' },
-    { id: '3', action: 'Security scan completed', admin: 'System', timestamp: '1 day ago' },
-  ]);
+  // Fetch cache stats
+  const { data: cacheStats } = useQuery({
+    queryKey: ['admin-cache-stats'],
+    queryFn: adminService.getCacheStats,
+    refetchInterval: 60000, // Refresh every minute
+  });
 
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket((data) => {
-    if (data.type === 'system_health_update') {
-      // Update system stats in real-time
-      setSystemStats(prev => prev.map(stat => 
-        stat.label === (data.stat_label as string)
-          ? { ...stat, value: data.stat_value as string, color: (data.stat_color as string) || stat.color } 
-          : stat
-      ));
-    } else if (data.type === 'admin_action') {
-      // Add new admin action to the list
-      const newAction: AdminAction = {
-        id: data.action_id as string,
-        action: data.action_description as string,
-        admin: data.admin_name as string,
-        timestamp: 'Just now'
-      };
-      
-      setRecentActions(prev => [newAction, ...prev.slice(0, 2)]);
-      
-      // Show notification
+    if (data.type === 'admin_action') {
       toast.info('Admin action performed', {
         description: `${data.admin_name as string}: ${data.action_description as string}`
       });
     } else if (data.type === 'security_alert') {
-      // Show security alert notification
       toast.error('Security Alert', {
         description: data.alert_message as string
       });
-      
-      // Update security stats
-      setSystemStats(prev => prev.map(stat => 
-        stat.label === 'Security Alerts' 
-          ? { ...stat, value: (data.alert_count as number).toString(), color: 'text-destructive' } 
-          : stat
-      ));
     }
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="text-center">
+          <AlertCircle className="mx-auto h-12 w-12 text-destructive" />
+          <h3 className="mt-2 text-lg font-semibold">Error Loading Dashboard</h3>
+          <p className="text-muted-foreground">Please try refreshing the page</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -88,30 +73,27 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardCard
           title="Total Users"
-          value="2,847"
+          value={dashboardStats?.activity_stats?.unique_users_24h?.toString() || "0"}
           icon={Users}
-          trend={{ value: 12, isPositive: true }}
-          description="All roles"
+          description="Active users (24h)"
         />
         <DashboardCard
-          title="Security Alerts"
-          value="0"
+          title="Cache Health"
+          value={`${cacheStats?.cache_health?.health_percentage?.toFixed(0) || "0"}%`}
           icon={Shield}
-          description="Last 24 hours"
+          description={`${cacheStats?.cache_health?.healthy_caches || 0}/${cacheStats?.cache_health?.total_caches || 0} healthy`}
         />
         <DashboardCard
           title="Platform Activity"
-          value="98%"
+          value={dashboardStats?.activity_stats?.total_actions_24h?.toString() || "0"}
           icon={Activity}
-          trend={{ value: 5, isPositive: true }}
-          description="Uptime"
+          description="Actions (24h)"
         />
         <DashboardCard
-          title="Total Revenue"
-          value="$458K"
+          title="Pincodes Served"
+          value={dashboardStats?.pincode_stats?.total_pincodes_served?.toString() || "0"}
           icon={DollarSign}
-          trend={{ value: 18, isPositive: true }}
-          description="This month"
+          description="Active areas"
         />
       </div>
 
@@ -119,16 +101,38 @@ export default function AdminDashboard() {
         {/* System Health */}
         <Card className="card-elevated">
           <CardHeader>
-            <CardTitle>System Health</CardTitle>
+            <CardTitle>Cache Statistics</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {systemStats.map((stat, index) => (
-                <div key={index} className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{stat.label}</span>
-                  <span className={`font-medium ${stat.color}`}>{stat.value}</span>
-                </div>
-              ))}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Overall Health</span>
+                <span className={`font-medium ${
+                  (cacheStats?.cache_health?.health_percentage || 0) > 80 ? 'text-green-600' : 'text-yellow-600'
+                }`}>
+                  {cacheStats?.cache_health?.health_percentage?.toFixed(1) || 0}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Average Hit Rate</span>
+                <span className="font-medium text-blue-600">
+                  {cacheStats?.cache_health?.average_hit_rate?.toFixed(1) || 0}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Healthy Caches</span>
+                <span className="font-medium text-green-600">
+                  {cacheStats?.cache_health?.healthy_caches || 0}/{cacheStats?.cache_health?.total_caches || 0}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Cache Status</span>
+                <span className={`font-medium ${
+                  cacheStats?.cache_health?.status === 'healthy' ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {cacheStats?.cache_health?.status || 'Unknown'}
+                </span>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -136,16 +140,20 @@ export default function AdminDashboard() {
         {/* Recent Activity */}
         <Card className="card-elevated">
           <CardHeader>
-            <CardTitle>Recent Admin Actions</CardTitle>
+            <CardTitle>Top Admin Actions</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3 text-sm">
-              {recentActions.map((action) => (
-                <div key={action.id} className="p-3 border border-border rounded-lg">
+              {dashboardStats?.activity_stats?.top_actions?.map((action: any, index: number) => (
+                <div key={index} className="p-3 border border-border rounded-lg">
                   <p className="font-medium">{action.action}</p>
-                  <p className="text-xs text-muted-foreground">Admin {action.admin} • {action.timestamp}</p>
+                  <p className="text-xs text-muted-foreground">{action.count} times today</p>
                 </div>
-              ))}
+              )) || (
+                <div className="text-center py-4 text-muted-foreground">
+                  No recent admin actions
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
