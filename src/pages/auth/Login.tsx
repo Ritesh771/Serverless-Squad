@@ -103,34 +103,7 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Quick Demo Login</span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 mt-4">
-              <Button variant="outline" size="sm" onClick={() => quickLogin('customer')} className="flex-1 min-w-[100px]">
-                Customer
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => quickLogin('vendor')} className="flex-1 min-w-[100px]">
-                Vendor
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => quickLogin('onboard')} className="flex-1 min-w-[100px]">
-                Onboard
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => quickLogin('ops')} className="flex-1 min-w-[100px]">
-                Ops
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => quickLogin('admin')} className="flex-1 min-w-[100px]">
-                Admin
-              </Button>
-            </div>
-          </div>
+          
 
           <div className="mt-6 text-center text-sm">
             <span className="text-muted-foreground">Don't have an account? </span>
