@@ -32,6 +32,7 @@ export const StripePaymentForm = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isCardComplete, setIsCardComplete] = useState(false); // New state to track card completion
   const cardElementRef = useRef<StripeCardElement | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -78,6 +79,16 @@ export const StripePaymentForm = ({
       });
       
       cardElementRef.current = cardElement;
+      
+      // Listen for card element changes
+      cardElement.on('change', (event) => {
+        setIsCardComplete(event.complete || false);
+        if (event.error) {
+          setErrorMessage(event.error.message);
+        } else {
+          setErrorMessage(null);
+        }
+      });
     }
   }, [stripe, elements]);
 
@@ -93,6 +104,28 @@ export const StripePaymentForm = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Handle mock payment
+    if (clientSecret.startsWith('mock_')) {
+      setIsProcessing(true);
+      setPaymentStatus('processing');
+      setErrorMessage(null);
+      
+      // Simulate payment processing delay
+      setTimeout(() => {
+        setPaymentStatus('success');
+        toast.success('Payment successful!', {
+          description: `Amount: ₹${(amount / 100).toFixed(2)}`
+        });
+        
+        // Simulate backend notification
+        setTimeout(() => {
+          onSuccess?.();
+        }, 1000);
+      }, 2000);
+      
+      return;
+    }
     
     if (!stripe || !elements || !cardElementRef.current || !clientSecret) {
       setErrorMessage('Payment system not initialized');
@@ -157,15 +190,25 @@ export const StripePaymentForm = ({
 
   if (paymentStatus === 'success') {
     return (
-      <Card className="w-full max-w-md mx-auto">
+      <Card className="w-full max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
         <CardContent className="pt-6">
           <div className="text-center">
-            <CheckCircle className="h-16 w-16 text-success mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Payment Successful!</h3>
-            <p className="text-muted-foreground mb-4">
-              Your payment of ₹{(amount / 100).toFixed(2)} has been processed successfully.
+            <div className="relative mx-auto mb-4">
+              <CheckCircle className="h-16 w-16 text-success mx-auto" />
+              <div className="absolute inset-0 h-16 w-16 animate-ping rounded-full bg-success/20"></div>
+            </div>
+            <h3 className="text-2xl font-bold mb-2 text-success">Payment Successful!</h3>
+            <p className="text-muted-foreground mb-1">
+              Your payment has been processed successfully.
             </p>
-            <Button onClick={onSuccess} className="w-full">
+            <p className="text-lg font-semibold mb-4">
+              Amount: ₹{(amount / 100).toFixed(2)}
+            </p>
+            <div className="bg-muted rounded-lg p-4 mb-4">
+              <p className="text-sm text-muted-foreground">Transaction ID</p>
+              <p className="font-mono text-sm break-all">{paymentId.substring(0, 8)}...</p>
+            </div>
+            <Button onClick={onSuccess} className="w-full animate-in fade-in slide-in-from-bottom-4 duration-700">
               Continue
             </Button>
           </div>
@@ -236,7 +279,7 @@ export const StripePaymentForm = ({
             </Button>
             <Button 
               type="submit" 
-              disabled={isProcessing}
+              disabled={isProcessing || !isCardComplete} // Disable button until card is complete
               className="w-full"
             >
               {isProcessing ? (

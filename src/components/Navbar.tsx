@@ -1,7 +1,8 @@
-import { Bell, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
+import { NotificationDropdown } from '@/components/NotificationDropdown';
 import type { User } from '@/services/authService';
 
 export const Navbar = () => {
@@ -45,10 +46,7 @@ export const Navbar = () => {
 
       {/* Right side */}
       <div className="flex items-center gap-2 md:gap-3 ml-auto">
-        <Button variant="ghost" size="icon" className="relative h-9 w-9 md:h-10 md:w-10">
-          <Bell className="h-4 w-4 md:h-5 md:w-5" />
-          <span className="absolute top-1 right-1 h-2 w-2 bg-destructive rounded-full" />
-        </Button>
+        <NotificationDropdown />
 
         <div className="hidden sm:block h-8 w-px bg-border" />
 

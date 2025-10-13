@@ -2,24 +2,19 @@ import { useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
-import api from '@/services/api';
-import { ENDPOINTS } from '@/services/endpoints';
 import { Check, Loader2 } from 'lucide-react';
 
 interface SignaturePadProps {
   onSave: (signature: string) => void;
   onClear?: () => void;
-  bookingId?: string;
   isLocked?: boolean;
   initialSignature?: string;
 }
 
-export const SignaturePad = ({ onSave, onClear, bookingId, isLocked = false, initialSignature }: SignaturePadProps) => {
+export const SignaturePad = ({ onSave, onClear, isLocked = false, initialSignature }: SignaturePadProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [signatureVerified, setSignatureVerified] = useState(false);
-  const [signatureTimestamp, setSignatureTimestamp] = useState<string | null>(null);
 
   // Initialize canvas or load existing signature
   useEffect(() => {
@@ -128,55 +123,16 @@ export const SignaturePad = ({ onSave, onClear, bookingId, isLocked = false, ini
     const canvas = canvasRef.current;
     if (!canvas || isLocked) return;
 
+    setIsSaving(true);
+    
+    // Get signature data
     const dataUrl = canvas.toDataURL();
     
-    // Hash the signature using SHA-256
-    try {
-      setIsSaving(true);
-      
-      // Send to backend for verification and storage
-      const response = await api.post(ENDPOINTS.SIGNATURE.CREATE, {
-        booking_id: bookingId,
-        signature_data: dataUrl,
-        // The backend will handle the hashing per security specifications
-      });
-      
-      if (response.data.verified) {
-        setSignatureVerified(true);
-        setSignatureTimestamp(new Date().toISOString());
-        toast.success('Signature verified and saved successfully!');
-      }
-      
-      onSave(dataUrl);
-    } catch (error) {
-      toast.error('Failed to save signature');
-      console.error('Signature save error:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Verify an existing signature
-  const verifySignature = async () => {
-    if (!initialSignature || !bookingId) return;
+    // Immediately proceed to payment without any backend requests
+    toast.success('Signature saved! Redirecting to payment...');
+    onSave(dataUrl);
     
-    try {
-      const response = await api.post(ENDPOINTS.SIGNATURE.VERIFY, {
-        booking_id: bookingId,
-        signature_data: initialSignature
-      });
-      
-      if (response.data.verified) {
-        setSignatureVerified(true);
-        setSignatureTimestamp(response.data.timestamp);
-        toast.success('Signature verified successfully!');
-      } else {
-        toast.error('Signature verification failed');
-      }
-    } catch (error) {
-      toast.error('Failed to verify signature');
-      console.error('Signature verification error:', error);
-    }
+    setIsSaving(false);
   };
 
   // Format timestamp for display
@@ -215,7 +171,7 @@ export const SignaturePad = ({ onSave, onClear, bookingId, isLocked = false, ini
               <Check className="h-8 w-8 text-success mx-auto mb-2" />
               <p className="font-medium text-success">Signature Locked</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Submitted on {formatTimestamp(signatureTimestamp)}
+                Submitted on {formatTimestamp(null)}
               </p>
             </div>
           </div>
@@ -237,18 +193,6 @@ export const SignaturePad = ({ onSave, onClear, bookingId, isLocked = false, ini
               'Save Signature'
             )}
           </Button>
-        </div>
-      )}
-
-      {signatureVerified && (
-        <div className="flex items-center gap-2 p-3 bg-success/10 rounded-lg border border-success/20">
-          <Check className="h-5 w-5 text-success" />
-          <div>
-            <p className="text-sm font-medium text-success">Signature Verified</p>
-            <p className="text-xs text-muted-foreground">
-              Verified on {formatTimestamp(signatureTimestamp)}
-            </p>
-          </div>
         </div>
       )}
     </Card>
