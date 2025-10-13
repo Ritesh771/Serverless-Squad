@@ -25,19 +25,13 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
   const reconnectDelay = 3000; // 3 seconds
+  const connectionStartTime = useRef<number | null>(null);
 
   const connect = useCallback(() => {
     if (!user) return;
 
     // Don't reconnect if already connected or connecting
     if (isConnected || isConnecting) return;
-
-    // Check if we've exceeded max reconnection attempts
-    if (reconnectAttempts.current >= maxReconnectAttempts) {
-      console.log(`WebSocket: Max reconnection attempts (${maxReconnectAttempts}) reached.`);
-      setIsConnecting(false);
-      return;
-    }
 
     // Clear any existing reconnection attempts
     if (reconnectTimeout.current) {
@@ -60,6 +54,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const wsUrl = `${wsProtocol}//${backendHost}:${backendPort}/ws/status/${user.id}/${user.role}/`;
       
       console.log('🔌 Connecting to WebSocket:', wsUrl);
+      connectionStartTime.current = Date.now();
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
@@ -67,6 +62,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setIsConnected(true);
         setIsConnecting(false);
         reconnectAttempts.current = 0; // Reset attempts on successful connection
+        connectionStartTime.current = null;
       };
 
       ws.current.onmessage = (event) => {
@@ -87,13 +83,27 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
 
       ws.current.onclose = (event) => {
+        const wasConnected = isConnected;
         console.log('WebSocket disconnected', event.code, event.reason);
         setIsConnected(false);
         setIsConnecting(false);
+        connectionStartTime.current = null;
 
-        // Only attempt to reconnect if we haven't exceeded max attempts
-        // and the close wasn't clean (error-related)
-        if (reconnectAttempts.current < maxReconnectAttempts && !event.wasClean) {
+        // If the connection was established for more than 30 seconds, reset reconnect attempts
+        if (wasConnected && connectionStartTime.current) {
+          const connectionDuration = Date.now() - connectionStartTime.current;
+          if (connectionDuration > 30000) {
+            reconnectAttempts.current = 0; // Reset if connection was stable for 30+ seconds
+          }
+        }
+
+        // Only attempt to reconnect if:
+        // 1. We haven't exceeded max attempts
+        // 2. The close wasn't clean (code 1000) or was due to network issues (code 1006)
+        // 3. We're not in the process of reconnecting already
+        if (reconnectAttempts.current < maxReconnectAttempts && 
+            (event.code === 1006 || event.code !== 1000) && 
+            !reconnectTimeout.current) {
           reconnectAttempts.current += 1;
           console.log(`⏳ Attempting to reconnect (${reconnectAttempts.current}/${maxReconnectAttempts}) in ${reconnectDelay/1000}s...`);
           
@@ -101,6 +111,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             reconnectTimeout.current = null;
             connect();
           }, reconnectDelay);
+        } else if (reconnectAttempts.current >= maxReconnectAttempts) {
+          console.log('WebSocket: Max reconnection attempts reached. Please refresh the page if you need real-time updates.');
         }
       };
 
@@ -108,11 +120,13 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         console.error('❌ WebSocket error:', error);
         setIsConnected(false);
         setIsConnecting(false);
+        connectionStartTime.current = null;
         // Error will trigger onclose, which handles reconnection
       };
     } catch (error) {
       console.error('Failed to connect WebSocket:', error);
       setIsConnecting(false);
+      connectionStartTime.current = null;
     }
   }, [user, isConnected, isConnecting]);
 
@@ -133,8 +147,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setIsConnected(false);
       setIsConnecting(false);
       reconnectAttempts.current = 0;
+      connectionStartTime.current = null;
     };
-  }, [user]); // Only reconnect when user changes, not on every connect change
+  }, [user, connect]); // Only reconnect when user changes
 
   const sendMessage = useCallback((message: Record<string, unknown>) => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {

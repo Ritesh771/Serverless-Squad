@@ -424,22 +424,36 @@ class LiveStatusConsumer(AsyncWebsocketConsumer):
             self.user_id = self.scope['url_route']['kwargs']['user_id']
             self.role = self.scope['url_route']['kwargs'].get('role', 'customer')
             
-            # Join user-specific group for status updates
-            self.user_status_group = f'status_user_{self.user_id}'
-            await self.channel_layer.group_add(
-                self.user_status_group,
-                self.channel_name
-            )
-            
-            # Join role-based group for bulk notifications
-            self.role_status_group = f'status_role_{self.role}'
-            await self.channel_layer.group_add(
-                self.role_status_group,
-                self.channel_name
-            )
-            
+            # Accept connection first
             await self.accept()
-            logger.info(f"LiveStatusConsumer connected for user {self.user_id} with role {self.role}")
+            logger.info(f"LiveStatusConsumer accepted connection for user {self.user_id} with role {self.role}")
+            
+            # Try to join groups - fail gracefully if channel layer not available
+            try:
+                # Join user-specific group for status updates
+                self.user_status_group = f'status_user_{self.user_id}'
+                await self.channel_layer.group_add(
+                    self.user_status_group,
+                    self.channel_name
+                )
+                
+                # Join role-based group for bulk notifications
+                self.role_status_group = f'status_role_{self.role}'
+                await self.channel_layer.group_add(
+                    self.role_status_group,
+                    self.channel_name
+                )
+                logger.info(f"LiveStatusConsumer joined groups for user {self.user_id}")
+            except AttributeError:
+                logger.warning(f"Channel layer not available, WebSocket will work in direct mode")
+                
+            # Send connection confirmation
+            await self.send(text_data=json.dumps({
+                'type': 'connection_established',
+                'message': 'Connected to live status updates',
+                'user_id': str(self.user_id),
+                'role': self.role
+            }))
         except Exception as e:
             logger.error(f"Error in live status consumer connect: {str(e)}")
             await self.close()

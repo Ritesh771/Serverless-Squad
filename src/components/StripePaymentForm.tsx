@@ -7,10 +7,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { loadStripe, Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
 import { toast } from 'sonner';
+import { bookingService } from '@/services/bookingService';
 
 interface StripePaymentFormProps {
   bookingId: string;
   amount: number;
+  clientSecret: string;
   currency?: string;
   onSuccess?: () => void;
   onCancel?: () => void;
@@ -19,7 +21,8 @@ interface StripePaymentFormProps {
 export const StripePaymentForm = ({ 
   bookingId, 
   amount, 
-  currency = 'usd', 
+  clientSecret,
+  currency = 'inr', 
   onSuccess,
   onCancel
 }: StripePaymentFormProps) => {
@@ -90,7 +93,7 @@ export const StripePaymentForm = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!stripe || !elements || !cardElementRef.current) {
+    if (!stripe || !elements || !cardElementRef.current || !clientSecret) {
       setErrorMessage('Payment system not initialized');
       return;
     }
@@ -100,10 +103,9 @@ export const StripePaymentForm = ({
     setErrorMessage(null);
 
     try {
-      // In a real implementation, you would call your backend to create a PaymentIntent
-      // and get the client secret
+      // Confirm the payment with the client secret
       const { error, paymentIntent } = await stripe.confirmCardPayment(
-        'pi_3PqZ2sGe3NmlcQxA123456789_secret_9876543210', // Mock client secret
+        clientSecret,
         {
           payment_method: {
             card: cardElementRef.current!,
@@ -121,7 +123,7 @@ export const StripePaymentForm = ({
       if (paymentIntent && paymentIntent.status === 'succeeded') {
         setPaymentStatus('success');
         toast.success('Payment successful!', {
-          description: `Amount: $${(amount / 100).toFixed(2)}`
+          description: `Amount: ₹${(amount / 100).toFixed(2)}`
         });
         onSuccess?.();
       } else {
@@ -148,10 +150,30 @@ export const StripePaymentForm = ({
             <CheckCircle className="h-16 w-16 text-success mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2">Payment Successful!</h3>
             <p className="text-muted-foreground mb-4">
-              Your payment of ${(amount / 100).toFixed(2)} has been processed successfully.
+              Your payment of ₹{(amount / 100).toFixed(2)} has been processed successfully.
             </p>
             <Button onClick={onSuccess} className="w-full">
               Continue
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Show error if no client secret
+  if (!clientSecret) {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardContent className="pt-6">
+          <div className="text-center">
+            <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
+            <h3 className="text-xl font-semibold mb-2">Payment Error</h3>
+            <p className="text-muted-foreground mb-4">
+              Payment information is missing. Please contact support.
+            </p>
+            <Button onClick={onCancel} className="w-full">
+              Back to Booking
             </Button>
           </div>
         </CardContent>
@@ -170,7 +192,7 @@ export const StripePaymentForm = ({
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2">
               <Label htmlFor="card-element">Card Information</Label>
               <span className="text-sm text-muted-foreground">
-                ${(amount / 100).toFixed(2)} {currency.toUpperCase()}
+                ₹{(amount / 100).toFixed(2)} {currency.toUpperCase()}
               </span>
             </div>
             <div 
@@ -210,7 +232,7 @@ export const StripePaymentForm = ({
                   Processing...
                 </>
               ) : (
-                `Pay $${(amount / 100).toFixed(2)}`
+                `Pay ₹${(amount / 100).toFixed(2)}`
               )}
             </Button>
           </div>

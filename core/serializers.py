@@ -59,7 +59,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
-        fields = '_all_'
+        fields = '__all__'
 
 
 class BookingSerializer(serializers.ModelSerializer):
@@ -70,7 +70,7 @@ class BookingSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Booking
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'customer']
     
     def get_dynamic_price_breakdown(self, obj):
@@ -110,28 +110,28 @@ class BookingSerializer(serializers.ModelSerializer):
 class PhotoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Photo
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['uploaded_by', 'uploaded_at']
 
 
 class SignatureSerializer(serializers.ModelSerializer):
     class Meta:
         model = Signature
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'signature_hash', 'requested_at', 'signed_at']
 
 
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuditLog
-        fields = '_all_'
+        fields = '__all__'
 
 
 class VendorAvailabilitySerializer(serializers.ModelSerializer):
@@ -139,7 +139,7 @@ class VendorAvailabilitySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = VendorAvailability
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['vendor', 'created_at', 'updated_at']
 
 
@@ -150,7 +150,7 @@ class EarningsSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Earnings
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'processed_by', 'processed_at', 'release_date']
 
 
@@ -163,7 +163,7 @@ class PerformanceMetricsSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = PerformanceMetrics
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'last_calculated']
     
     def get_avg_rating(self, obj):
@@ -182,7 +182,7 @@ class PerformanceMetricsSerializer(serializers.ModelSerializer):
 class VendorApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorApplication
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'reviewed_by', 'vendor_account', 'reviewed_at', 'ai_flag', 'flag_reason', 'flagged_at']
     
     def create(self, validated_data):
@@ -218,7 +218,7 @@ class VendorDocumentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = VendorDocument
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'uploaded_by', 'reviewed_by', 'reviewed_at', 'created_at', 'updated_at']
 
 
@@ -264,7 +264,7 @@ class DisputeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Dispute
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_messages_count(self, obj):
@@ -295,7 +295,7 @@ class DisputeMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DisputeMessage
-        fields = '_all_'
+        fields = '__all__'
         read_only_fields = ['id', 'sender', 'created_at', 'updated_at']
 
     def create(self, validated_data):
