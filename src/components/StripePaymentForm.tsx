@@ -8,9 +8,10 @@ import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { loadStripe, Stripe, StripeElements, StripeCardElement } from '@stripe/stripe-js';
 import { toast } from 'sonner';
 import { bookingService } from '@/services/bookingService';
+import api from '@/services/api';
 
 interface StripePaymentFormProps {
-  bookingId: string;
+  paymentId: string;
   amount: number;
   clientSecret: string;
   currency?: string;
@@ -19,7 +20,7 @@ interface StripePaymentFormProps {
 }
 
 export const StripePaymentForm = ({ 
-  bookingId, 
+  paymentId, 
   amount, 
   clientSecret,
   currency = 'inr', 
@@ -125,6 +126,18 @@ export const StripePaymentForm = ({
         toast.success('Payment successful!', {
           description: `Amount: ₹${(amount / 100).toFixed(2)}`
         });
+        
+        // Notify backend that payment was successful
+        try {
+          await api.post(`/api/payments/${paymentId}/confirm_payment/`, {
+            payment_intent_id: paymentIntent.id,
+            status: paymentIntent.status
+          });
+        } catch (backendError) {
+          console.warn('Backend notification failed, but payment succeeded:', backendError);
+          // Don't fail the payment if backend notification fails
+        }
+        
         onSuccess?.();
       } else {
         throw new Error('Payment processing failed');

@@ -47,7 +47,7 @@ export const DisputeForm = ({ bookingId, onDisputeSubmitted, onCancel }: Dispute
       }
       
       // Create dispute
-      const response = await api.post(ENDPOINTS.OPS.DISPUTES, {
+      const response = await api.post(ENDPOINTS.DISPUTES.CREATE, {
         booking: bookingId,
         reason,
         description,

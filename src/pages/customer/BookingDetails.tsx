@@ -11,6 +11,7 @@ import { ArrowLeft, Calendar, MapPin, User, DollarSign, FileText, Image as Image
 import { toast } from 'sonner';
 import { PaymentTimeline } from '@/components/PaymentTimeline';
 import { bookingService, type Booking } from '@/services/bookingService';
+import { signatureService } from '@/services/signatureService';
 import { Loader } from '@/components/Loader';
 
 export default function BookingDetails() {
@@ -19,6 +20,12 @@ export default function BookingDetails() {
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
+
+  // Fetch signatures to check for pending signatures on this booking
+  const { data: signatures } = useQuery({
+    queryKey: ['signatures'],
+    queryFn: () => signatureService.getSignatures(),
+  });
 
   // Fetch booking details from backend
   const { data: booking, isLoading, error, refetch } = useQuery({
@@ -165,20 +172,34 @@ export default function BookingDetails() {
               </p>
               
               {/* Payment Status Messages */}
-              {booking.status === 'completed' && (
-                <div className="mt-4">
-                  <Button 
-                    className="w-full" 
-                    onClick={() => navigate(`/customer/signature/${id}`)}
-                  >
-                    <CreditCard className="h-4 w-4 mr-2" />
-                    Sign to Complete & Pay
-                  </Button>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    Payment will be processed automatically after you sign to confirm job completion
-                  </p>
-                </div>
-              )}
+              {(() => {
+                const pendingSignature = signatures?.find(s => s.booking === booking.id && s.status === 'pending');
+                if (pendingSignature) {
+                  return (
+                    <div className="mt-4">
+                      <Button 
+                        className="w-full" 
+                        onClick={() => navigate(`/customer/signature/${pendingSignature.id}`)}
+                      >
+                        <CreditCard className="h-4 w-4 mr-2" />
+                        Sign to Complete & Pay
+                      </Button>
+                      <p className="text-xs text-muted-foreground mt-2 text-center">
+                        Payment will be processed automatically after you sign to confirm job completion
+                      </p>
+                    </div>
+                  );
+                } else if (booking.status === 'completed') {
+                  return (
+                    <div className="mt-4">
+                      <p className="text-sm text-muted-foreground text-center">
+                        Waiting for vendor to request signature...
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               
               {booking.status === 'signed' && (
                 <div className="flex items-center text-success">

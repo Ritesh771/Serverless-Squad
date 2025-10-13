@@ -250,9 +250,49 @@ class Signature(models.Model):
             self.expires_at = timezone.now() + timezone.timedelta(hours=48)
         
         if self.status == 'signed' and self.signature_data and not self.signature_hash:
-            # Generate SHA-256 hash for tamper-proofing
-            signature_string = f"{self.booking.id}{self.signed_by.id}{self.signed_at}_{self.satisfaction_rating}"
-            self.signature_hash = hashlib.sha256(signature_string.encode()).hexdigest()
+            # Generate SHA-256 hash for tamper-proofing using comprehensive signature data
+            import hashlib
+            import json
+            
+            # Create a comprehensive hash string including all signature details
+            hash_data = {
+                'booking_id': str(self.booking.id),
+                'customer_id': str(self.signed_by.id),
+                'signed_at': self.signed_at.isoformat() if self.signed_at else '',
+                'satisfaction_rating': self.satisfaction_rating,
+                'satisfaction_comments': self.satisfaction_comments or '',
+                'signature_data': self.signature_data
+            }
+            
+            # Sort keys for consistent hashing
+            hash_string = json.dumps(hash_data, sort_keys=True, separators=(',', ':'))
+            self.signature_hash = hashlib.sha256(hash_string.encode('utf-8')).hexdigest()
+    
+    def verify_signature_integrity(self):
+        """
+        Verify that the signature hash matches the current signature data
+        Returns True if signature is intact, False if tampered with
+        """
+        if not self.signature_hash or not self.signature_data:
+            return False
+            
+        import hashlib
+        import json
+        
+        # Recreate the hash using current data
+        hash_data = {
+            'booking_id': str(self.booking.id),
+            'customer_id': str(self.signed_by.id),
+            'signed_at': self.signed_at.isoformat() if self.signed_at else '',
+            'satisfaction_rating': self.satisfaction_rating,
+            'satisfaction_comments': self.satisfaction_comments or '',
+            'signature_data': self.signature_data
+        }
+        
+        hash_string = json.dumps(hash_data, sort_keys=True, separators=(',', ':'))
+        current_hash = hashlib.sha256(hash_string.encode('utf-8')).hexdigest()
+        
+        return current_hash == self.signature_hash
             
         super().save(*args, **kwargs)
     

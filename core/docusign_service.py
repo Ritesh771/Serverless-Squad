@@ -171,25 +171,38 @@ class DocuSignService:
                 if status == 'completed' or envelope_status == 'completed':
                     signature.status = 'signed'
                     signature.signed_at = timezone.now()
-                    signature.save()
+                    
+                    # Store comprehensive signature data for hashing
+                    signature.signature_data = {
+                        'envelope_id': envelope_id,
+                        'signed_via': 'docusign',
+                        'signed_at': signature.signed_at.isoformat(),
+                        'booking_id': str(signature.booking.id),
+                        'customer_id': str(signature.booking.customer.id),
+                        'vendor_id': str(signature.booking.vendor.id) if signature.booking.vendor else None,
+                        'service_name': signature.booking.service.name,
+                        'envelope_status': status
+                    }
+                    
+                    signature.save()  # This will generate the SHA-256 hash
                     
                     # Trigger automatic payment processing
                     from .payment_service import PaymentService
                     PaymentService.process_automatic_payment(signature.booking)
                     
-                    logger.info(f"Signature {signature.id} marked as signed based on DocuSign completion")
+                    logger.info(f"Signature {signature.id} marked as signed via DocuSign")
                     
                 elif status == 'declined' or envelope_status == 'declined':
                     signature.status = 'rejected'
                     signature.save()
                     
-                    logger.info(f"Signature {signature.id} marked as rejected based on DocuSign decline")
+                    logger.info(f"Signature {signature.id} marked as rejected via DocuSign")
                     
                 elif status == 'voided' or envelope_status == 'voided':
                     signature.status = 'expired'
                     signature.save()
                     
-                    logger.info(f"Signature {signature.id} marked as expired based on DocuSign void")
+                    logger.info(f"Signature {signature.id} marked as expired via DocuSign")
                 
                 # Send WebSocket notification
                 try:

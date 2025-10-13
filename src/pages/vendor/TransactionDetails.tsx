@@ -3,23 +3,57 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ArrowLeft, Calendar, User, FileText, Hash, FileSignature } from 'lucide-react';
+import { ArrowLeft, Calendar, User, FileText, Hash, FileSignature, Loader2, AlertCircle } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { vendorService } from '@/services/vendorService';
+import { toast } from 'sonner';
 
 export default function TransactionDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const transaction = {
-    id,
-    date: '2025-01-15',
-    customer: 'John Doe',
-    service: 'Plumbing Repair',
-    amount: '$80',
-    status: 'Completed',
-    paymentMethod: 'Bank Transfer',
-    transactionHash: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
-    bookingId: 'BK-12345',
+  // Fetch earnings summary to get transaction data
+  const { data: earningsSummary, isLoading, error } = useQuery({
+    queryKey: ['vendor-earnings-summary'],
+    queryFn: () => vendorService.getEarningsSummary(),
+  });
+
+  // Find the specific transaction
+  const transaction = earningsSummary?.recent_transactions?.find(
+    (t: any) => t.id === id
+  );
+
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'paid': return 'bg-success text-success-foreground';
+      case 'pending': return 'bg-warning text-warning-foreground';
+      case 'cancelled': return 'bg-destructive text-destructive-foreground';
+      default: return 'bg-muted text-muted-foreground';
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !transaction) {
+    return (
+      <div className="p-4">
+        <div className="text-center">
+          <AlertCircle className="mx-auto h-12 w-12 text-destructive mb-4" />
+          <h3 className="mt-2 text-lg font-semibold">Transaction Not Found</h3>
+          <p className="text-muted-foreground">The transaction you're looking for doesn't exist or you don't have access to it.</p>
+          <Button onClick={() => navigate(-1)} className="mt-4">
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
@@ -33,7 +67,7 @@ export default function TransactionDetails() {
           <h1 className="text-3xl font-bold">Transaction Details</h1>
           <p className="text-muted-foreground mt-1">ID: #{transaction.id}</p>
         </div>
-        <Badge className="bg-success text-success-foreground">
+        <Badge className={getStatusColor(transaction.status)}>
           {transaction.status}
         </Badge>
       </div>
@@ -49,7 +83,9 @@ export default function TransactionDetails() {
                 <Calendar className="h-5 w-5 text-primary mt-0.5" />
                 <div>
                   <p className="font-medium">Transaction Date</p>
-                  <p className="text-sm text-muted-foreground">{transaction.date}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(transaction.created_at).toLocaleDateString()}
+                  </p>
                 </div>
               </div>
 
@@ -57,7 +93,7 @@ export default function TransactionDetails() {
                 <User className="h-5 w-5 text-primary mt-0.5" />
                 <div>
                   <p className="font-medium">Customer</p>
-                  <p className="text-sm text-muted-foreground">{transaction.customer}</p>
+                  <p className="text-sm text-muted-foreground">Customer #{transaction.booking_id}</p>
                 </div>
               </div>
 
@@ -73,17 +109,17 @@ export default function TransactionDetails() {
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground">Amount</p>
-                <p className="text-3xl font-bold text-primary">{transaction.amount}</p>
+                <p className="text-3xl font-bold text-primary">${transaction.amount.toFixed(2)}</p>
               </div>
 
               <div>
                 <p className="text-sm text-muted-foreground">Payment Method</p>
-                <p className="font-medium">{transaction.paymentMethod}</p>
+                <p className="font-medium">Bank Transfer</p>
               </div>
 
               <div>
                 <p className="text-sm text-muted-foreground">Booking ID</p>
-                <p className="font-medium">{transaction.bookingId}</p>
+                <p className="font-medium">{transaction.booking_id}</p>
               </div>
             </div>
           </div>
@@ -92,9 +128,9 @@ export default function TransactionDetails() {
             <div className="flex items-start gap-3">
               <Hash className="h-5 w-5 text-primary mt-0.5" />
               <div className="flex-1">
-                <p className="font-medium mb-1">Blockchain Verification Hash</p>
+                <p className="font-medium mb-1">Transaction ID</p>
                 <code className="text-xs text-muted-foreground break-all">
-                  {transaction.transactionHash}
+                  {transaction.id}
                 </code>
               </div>
             </div>

@@ -230,3 +230,19 @@ class SignatureService:
         except Exception as e:
             logger.error(f"Error handling DocuSign webhook: {str(e)}")
             return False
+    
+    @staticmethod
+    def verify_signature_integrity(signature_id):
+        """
+        Verify the integrity of a signature using its cryptographic hash
+        Returns True if signature is intact, False if tampered with
+        """
+        try:
+            signature = Signature.objects.get(id=signature_id)
+            return signature.verify_signature_integrity()
+        except Signature.DoesNotExist:
+            logger.error(f"Signature {signature_id} not found for integrity check")
+            return False
+        except Exception as e:
+            logger.error(f"Error verifying signature integrity for {signature_id}: {str(e)}")
+            return False

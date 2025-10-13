@@ -30,8 +30,19 @@ export default function Login() {
 
   // Quick login buttons for demo
   const quickLogin = (role: string) => {
-    setUsername(role);
-    setPassword('demo123');
+    const demoCredentials: Record<string, { username: string; password: string }> = {
+      customer: { username: 'customer1', password: 'demo123' },
+      vendor: { username: 'vendor1', password: 'demo123' },
+      onboard: { username: 'onboard1', password: 'demo123' },
+      ops: { username: 'ops1', password: 'demo123' },
+      admin: { username: 'admin1', password: 'demo123' },
+    };
+
+    const creds = demoCredentials[role];
+    if (creds) {
+      setUsername(creds.username);
+      setPassword(creds.password);
+    }
   };
 
   return (

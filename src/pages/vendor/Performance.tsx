@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { vendorService } from '@/services/vendorService';
+import { toast } from 'sonner';
+import { Loader2, Trophy, Star, CheckCircle, Clock, AlertTriangle, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Trophy, Star, CheckCircle, Clock, AlertTriangle, TrendingUp } from 'lucide-react';
-import api from '@/services/api';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
 
 interface PerformanceMetrics {
   id: string;
@@ -30,23 +29,11 @@ interface PerformanceMetrics {
 }
 
 export default function VendorPerformance() {
-  const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchPerformanceMetrics();
-  }, []);
-
-  const fetchPerformanceMetrics = async () => {
-    try {
-      const response = await api.get('/api/performance-metrics/summary/');
-      setMetrics(response.data);
-    } catch (error) {
-      toast.error('Failed to load performance metrics');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Fetch performance metrics using the new vendor service
+  const { data: metrics, isLoading, error } = useQuery({
+    queryKey: ['vendor-performance'],
+    queryFn: () => vendorService.getPerformance(),
+  });
 
   const getTierColor = (tier: string) => {
     switch (tier) {
@@ -76,10 +63,26 @@ export default function VendorPerformance() {
 
   const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#EF4444'];
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="text-center">
+          <p className="text-destructive mb-4">Failed to load performance data</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-primary text-primary-foreground rounded"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

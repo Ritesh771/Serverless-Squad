@@ -10,8 +10,10 @@ from .views import (
     EarningsViewSet, PerformanceMetricsViewSet,
     DisputeResolutionAPIView, VendorBonusAPIView, VendorAIAnalyticsAPIView,
     EnhancedSignatureAPIView, VendorDocumentViewSet,
-    dispute_analytics, vendor_onboarding_analytics, chat_query, chat_context,
+    dispute_analytics, vendor_onboarding_analytics, chat_query, chat_context,chatbot_query,
     current_user_profile,
+    # Vendor specific views
+    VendorDashboardAPIView, VendorJobManagementAPIView, VendorEarningsAPIView,
     # Advanced Features APIs
     PincodeAIAnalyticsAPIView, AdvancedDisputeResolutionAPIView, AdvancedVendorBonusAPIView,
     # Webhook endpoints
@@ -49,6 +51,12 @@ urlpatterns = [
     # User Profile
     path('api/users/me/', current_user_profile, name='current-user-profile'),
     
+    # Vendor specific endpoints
+    path('api/vendor-dashboard/', VendorDashboardAPIView.as_view(), name='vendor-dashboard'),
+    path('api/vendor-job-management/', VendorJobManagementAPIView.as_view(), name='vendor-job-management'),
+    path('api/vendor-job-management/<str:booking_id>/<str:action>/', VendorJobManagementAPIView.as_view(), name='vendor-job-action'),
+    path('api/vendor-earnings-summary/', VendorEarningsAPIView.as_view(), name='vendor-earnings-summary'),
+    
     # Vendor Search API
     path('api/vendor-search/', VendorSearchAPIView.as_view(), name='vendor-search'),
     
@@ -74,6 +82,7 @@ urlpatterns = [
     # Chatbot APIs
     path('api/chat/query/', chat_query, name='chat-query'),
     path('api/chat/context/', chat_context, name='chat-context'),
+    path('api/chatbot/', chatbot_query, name='chatbot-query'),
     
     # Analytics APIs
     path('api/analytics/disputes/', dispute_analytics, name='dispute-analytics'),

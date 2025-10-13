@@ -1,64 +1,124 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PhotoUpload } from '@/components/PhotoUpload';
-import { ArrowLeft, Calendar, MapPin, User, Phone, FileSignature } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, User, Phone, FileSignature, Loader2, CheckCircle, Camera } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { bookingService } from '@/services/bookingService';
+import { vendorService } from '@/services/vendorService';
 
 export default function VendorJobDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [photos, setPhotos] = useState<File[]>([]);
 
-  const job = {
-    id,
-    service: 'Plumbing Repair',
-    customer: 'John Doe',
-    customerPhone: '+1 234 567 8900',
-    date: '2025-01-15',
-    time: '10:00 AM',
-    address: '123 Main St, Apartment 4B',
-    pincode: '12345',
-    status: 'in-progress',
-    description: 'Leaking kitchen faucet needs repair',
-  };
+  // Fetch job details
+  const { data: job, isLoading, error } = useQuery({
+    queryKey: ['vendor-job', id],
+    queryFn: () => bookingService.getBooking(id!),
+    enabled: !!id,
+  });
 
-  const [aiValidation, setAiValidation] = useState({
-    status: 'pending',
-    score: 0,
-    message: '',
+  // Mutations for job actions
+  const startJobMutation = useMutation({
+    mutationFn: (jobId: string) => vendorService.startJob(jobId),
+    onSuccess: () => {
+      toast.success('Job started successfully!');
+      queryClient.invalidateQueries({ queryKey: ['vendor-job', id] });
+      queryClient.invalidateQueries({ queryKey: ['vendor-bookings'] });
+    },
+    onError: () => {
+      toast.error('Failed to start job');
+    },
+  });
+
+  const completeJobMutation = useMutation({
+    mutationFn: (jobId: string) => vendorService.completeJob(jobId),
+    onSuccess: () => {
+      toast.success('Job completed successfully!');
+      queryClient.invalidateQueries({ queryKey: ['vendor-job', id] });
+      queryClient.invalidateQueries({ queryKey: ['vendor-bookings'] });
+    },
+    onError: () => {
+      toast.error('Failed to complete job');
+    },
+  });
+
+  const requestSignatureMutation = useMutation({
+    mutationFn: (jobId: string) => vendorService.requestSignature(jobId),
+    onSuccess: () => {
+      toast.success('Signature request sent to customer!');
+      queryClient.invalidateQueries({ queryKey: ['vendor-job', id] });
+    },
+    onError: () => {
+      toast.error('Failed to request signature');
+    },
+  });
+
+  const uploadPhotosMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      if (!id) throw new Error('Job ID not found');
+      return vendorService.uploadPhotos(id, formData);
+    },
+    onSuccess: () => {
+      toast.success('Photos uploaded successfully!');
+      queryClient.invalidateQueries({ queryKey: ['vendor-job', id] });
+      setPhotos([]);
+    },
+    onError: () => {
+      toast.error('Failed to upload photos');
+    },
   });
 
   const handlePhotoUpload = (files: File[]) => {
     setPhotos(files);
-    toast.success('Photos uploaded successfully!');
-    
-    // Mock AI validation
-    setTimeout(() => {
-      const mockScore = Math.floor(Math.random() * 30) + 70;
-      setAiValidation({
-        status: mockScore >= 80 ? 'approved' : 'review',
-        score: mockScore,
-        message: mockScore >= 80 
-          ? 'Photos meet quality standards' 
-          : 'Photos require manual review',
+    // Auto-upload photos when selected
+    if (files.length > 0) {
+      const formData = new FormData();
+      files.forEach((file, index) => {
+        formData.append('photos', file);
+        formData.append('photo_types', index === 0 ? 'before' : 'after'); // Simple logic for demo
       });
-      toast.info(`AI Validation Score: ${mockScore}%`);
-    }, 2000);
+      uploadPhotosMutation.mutate(formData);
+    }
   };
 
   const handleRequestSignature = () => {
-    // TODO: Trigger signature request to customer
-    toast.success('Signature request sent to customer!');
+    if (!id) return;
+    requestSignatureMutation.mutate(id);
+  };
+
+  const handleStartJob = () => {
+    if (!id) return;
+    startJobMutation.mutate(id);
   };
 
   const handleMarkComplete = () => {
-    // TODO: Connect to backend API
-    toast.success('Job marked as complete!');
-    navigate('/vendor/job-list');
+    if (!id) return;
+    completeJobMutation.mutate(id);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading job details...</span>
+      </div>
+    );
+  }
+
+  if (error || !job) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <p className="text-destructive mb-4">Failed to load job details</p>
+        <Button onClick={() => navigate(-1)}>Go Back</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
@@ -87,7 +147,7 @@ export default function VendorJobDetails() {
                 <div>
                   <p className="font-medium">Date & Time</p>
                   <p className="text-sm text-muted-foreground">
-                    {job.date} at {job.time}
+                    {new Date(job.scheduled_date).toLocaleDateString()} at {new Date(job.scheduled_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                   </p>
                 </div>
               </div>
@@ -96,7 +156,7 @@ export default function VendorJobDetails() {
                 <MapPin className="h-5 w-5 text-primary mt-0.5" />
                 <div>
                   <p className="font-medium">Service Address</p>
-                  <p className="text-sm text-muted-foreground">{job.address}</p>
+                  <p className="text-sm text-muted-foreground">{job.pincode}</p>
                 </div>
               </div>
 
@@ -104,7 +164,7 @@ export default function VendorJobDetails() {
                 <User className="h-5 w-5 text-primary mt-0.5" />
                 <div>
                   <p className="font-medium">Customer</p>
-                  <p className="text-sm text-muted-foreground">{job.customer}</p>
+                  <p className="text-sm text-muted-foreground">{job.customer_name || `Customer #${job.customer}`}</p>
                 </div>
               </div>
 
@@ -112,7 +172,7 @@ export default function VendorJobDetails() {
                 <Phone className="h-5 w-5 text-primary mt-0.5" />
                 <div>
                   <p className="font-medium">Contact</p>
-                  <p className="text-sm text-muted-foreground">{job.customerPhone}</p>
+                  <p className="text-sm text-muted-foreground">Contact information available after job acceptance</p>
                 </div>
               </div>
             </div>
@@ -120,49 +180,21 @@ export default function VendorJobDetails() {
             <PhotoUpload
               onUpload={handlePhotoUpload}
               title="Upload Job Photos"
-              description="Upload before/after photos for AI validation"
+              description="Upload before/after photos for quality verification"
             />
 
             {photos.length > 0 && (
               <div className="p-4 bg-muted rounded-lg border">
                 <h4 className="font-medium mb-3 flex items-center gap-2">
-                  AI Validation Status
-                  <Badge
-                    variant={
-                      aiValidation.status === 'approved'
-                        ? 'default'
-                        : aiValidation.status === 'review'
-                        ? 'secondary'
-                        : 'outline'
-                    }
-                    className={
-                      aiValidation.status === 'approved'
-                        ? 'bg-success text-success-foreground'
-                        : aiValidation.status === 'review'
-                        ? 'bg-warning text-warning-foreground'
-                        : ''
-                    }
-                  >
-                    {aiValidation.status === 'pending' ? 'Analyzing...' : aiValidation.status}
+                  Photo Upload Status
+                  <Badge variant="secondary">
+                    {uploadPhotosMutation.isPending ? 'Uploading...' : 'Uploaded'}
                   </Badge>
                 </h4>
-                {aiValidation.score > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Quality Score</span>
-                      <span className="font-medium">{aiValidation.score}%</span>
-                    </div>
-                    <div className="w-full bg-background rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full ${
-                          aiValidation.score >= 80 ? 'bg-success' : 'bg-warning'
-                        }`}
-                        style={{ width: `${aiValidation.score}%` }}
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      {aiValidation.message}
-                    </p>
+                {uploadPhotosMutation.isPending && (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Uploading photos...</span>
                   </div>
                 )}
               </div>
@@ -191,13 +223,51 @@ export default function VendorJobDetails() {
               <CardTitle>Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button className="w-full" onClick={handleRequestSignature}>
-                Request Signature
-              </Button>
-              <Button variant="outline" className="w-full" onClick={handleMarkComplete}>
-                Mark Complete
-              </Button>
+              {job.status === 'confirmed' && (
+                <Button className="w-full" onClick={handleStartJob} disabled={startJobMutation.isPending}>
+                  {startJobMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Start Job
+                </Button>
+              )}
+
+              {job.status === 'in_progress' && (
+                <>
+                  <Button className="w-full" onClick={handleMarkComplete} disabled={completeJobMutation.isPending}>
+                    {completeJobMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                    )}
+                    Mark Complete
+                  </Button>
+                  <Button variant="outline" className="w-full" onClick={handleRequestSignature} disabled={requestSignatureMutation.isPending}>
+                    {requestSignatureMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <FileSignature className="h-4 w-4 mr-2" />
+                    )}
+                    Request Signature
+                  </Button>
+                </>
+              )}
+
+              {job.status === 'completed' && (
+                <Button variant="outline" className="w-full" onClick={handleRequestSignature} disabled={requestSignatureMutation.isPending}>
+                  {requestSignatureMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <FileSignature className="h-4 w-4 mr-2" />
+                  )}
+                  Request Signature
+                </Button>
+              )}
+
               <Button variant="outline" className="w-full">
+                <Phone className="h-4 w-4 mr-2" />
                 Contact Customer
               </Button>
             </CardContent>

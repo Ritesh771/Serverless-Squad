@@ -3,9 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { SignaturePad } from '@/components/SignaturePad';
 import { PhotoReview } from '@/components/PhotoReview';
 import { DisputeForm } from '@/components/DisputeForm';
+import { StripePaymentForm } from '@/components/StripePaymentForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, AlertTriangle, AlertCircle, Loader2 } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, AlertTriangle, AlertCircle, Loader2, Star, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/services/api';
 import { ENDPOINTS } from '@/services/endpoints';
@@ -45,6 +48,10 @@ export default function SignaturePage() {
   const [photosViewed, setPhotosViewed] = useState(false);
   const [showDisputeForm, setShowDisputeForm] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
+  const [satisfactionRating, setSatisfactionRating] = useState(5);
+  const [comments, setComments] = useState('');
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentIntent, setPaymentIntent] = useState<any>(null);
 
   useEffect(() => {
     if (id) {
@@ -54,10 +61,15 @@ export default function SignaturePage() {
 
   const fetchBookingDetails = async () => {
     try {
-      const response = await api.get(`${ENDPOINTS.BOOKINGS.DETAIL(id!)}`);
-      setBooking(response.data);
+      // First get the signature details
+      const signatureResponse = await api.get(`${ENDPOINTS.SIGNATURES.DETAIL(id!)}`);
+      const signature = signatureResponse.data;
+      
+      // Then get the booking details
+      const bookingResponse = await api.get(`${ENDPOINTS.BOOKINGS.DETAIL(signature.booking)}`);
+      setBooking(bookingResponse.data);
     } catch (error) {
-      toast.error('Failed to load booking details');
+      toast.error('Failed to load signature details');
     } finally {
       setLoading(false);
     }
@@ -75,18 +87,61 @@ export default function SignaturePage() {
     try {
       const response = await api.post(`${ENDPOINTS.SIGNATURES.SIGN(id!)}`, {
         signature_data: signatureData,
-        satisfaction_rating: 5, // Default rating, could be made configurable
-        comments: 'Service completed to satisfaction'
+        satisfaction_rating: satisfactionRating,
+        comments: comments || 'Service completed to satisfaction'
       });
       
       toast.success('Signature saved successfully!');
       
-      // Wait a moment for the backend to process the payment
-      setTimeout(() => {
-        navigate(`/customer/my-bookings/${id}`);
-      }, 1500);
+      // Check if we need to collect payment
+      if (booking && booking.total_price > 0) {
+        // Get payment intent from backend
+        try {
+          const paymentResponse = await api.get(`${ENDPOINTS.BOOKINGS.DETAIL(booking.id)}`);
+          const paymentData = paymentResponse.data.payment;
+          
+          if (paymentData && paymentData.stripe_payment_intent_id) {
+            // Get the client secret from the payment intent
+            const intentResponse = await api.post(ENDPOINTS.PAYMENTS.GET_CLIENT_SECRET, {
+              payment_intent_id: paymentData.stripe_payment_intent_id
+            });
+            
+            if (intentResponse.data.client_secret) {
+              setPaymentIntent({
+                client_secret: intentResponse.data.client_secret,
+                amount: booking.total_price * 100, // Convert to paise
+                payment_id: paymentData.id
+              });
+              setShowPaymentForm(true);
+            } else {
+              // No payment required or already processed
+              setTimeout(() => {
+                navigate(`/customer/my-bookings/${booking?.id}`);
+              }, 1500);
+            }
+          } else {
+            // No payment record, redirect
+            setTimeout(() => {
+              navigate(`/customer/my-bookings/${booking?.id}`);
+            }, 1500);
+          }
+        } catch (paymentError) {
+          console.error('Error getting payment intent:', paymentError);
+          // If payment setup fails, still allow completion
+          setTimeout(() => {
+            navigate(`/customer/my-bookings/${booking?.id}`);
+          }, 1500);
+        }
+      } else {
+        // No payment required
+        setTimeout(() => {
+          navigate(`/customer/my-bookings/${booking?.id}`);
+        }, 1500);
+      }
     } catch (error) {
       toast.error('Failed to save signature');
+      setIsSigning(false);
+    } finally {
       setIsSigning(false);
     }
   };
@@ -94,6 +149,19 @@ export default function SignaturePage() {
   const handlePhotosViewed = () => {
     setPhotosViewed(true);
     toast.success('Photos reviewed. You can now proceed with signing.');
+  };
+
+  const handlePaymentSuccess = () => {
+    toast.success('Payment completed successfully!');
+    setTimeout(() => {
+      navigate(`/customer/my-bookings/${booking?.id}`);
+    }, 1500);
+  };
+
+  const handlePaymentCancel = () => {
+    setShowPaymentForm(false);
+    // Allow user to go back to booking details
+    navigate(`/customer/my-bookings/${booking?.id}`);
   };
 
   const handleDisputeSubmitted = () => {
@@ -158,6 +226,14 @@ export default function SignaturePage() {
           onDisputeSubmitted={handleDisputeSubmitted}
           onCancel={() => setShowDisputeForm(false)}
         />
+      ) : showPaymentForm && paymentIntent ? (
+        <StripePaymentForm
+          paymentId={paymentIntent.payment_id}
+          amount={paymentIntent.amount}
+          clientSecret={paymentIntent.client_secret}
+          onSuccess={handlePaymentSuccess}
+          onCancel={handlePaymentCancel}
+        />
       ) : (
         <>
           {booking?.photos && booking.photos.length > 0 && (
@@ -207,6 +283,46 @@ export default function SignaturePage() {
             </Button>
           </div>
 
+          <Card className="card-elevated">
+            <CardHeader>
+              <CardTitle>Service Satisfaction</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="rating">Rate your experience (1-5 stars)</Label>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setSatisfactionRating(star)}
+                      className="focus:outline-none"
+                    >
+                      <Star
+                        className={`h-6 w-6 ${
+                          star <= satisfactionRating
+                            ? 'fill-warning text-warning'
+                            : 'text-muted-foreground'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="comments">Comments (Optional)</Label>
+                <Textarea
+                  id="comments"
+                  placeholder="Share your feedback about the service..."
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
           {isSigning ? (
             <Card className="card-elevated">
               <CardContent className="flex flex-col items-center justify-center py-8">
@@ -221,9 +337,9 @@ export default function SignaturePage() {
           <Card className="bg-muted border-none">
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground">
-                By signing, you confirm that the service has been completed to your satisfaction
-                and authorize payment processing. Your signature will be encrypted and stored
-                securely with blockchain verification.
+                By signing, you confirm that the service has been completed to your satisfaction.
+                You will be prompted to complete payment securely after signing.
+                Your signature will be encrypted and stored securely.
               </p>
               {!photosViewed && booking?.photos && booking.photos.length > 0 && (
                 <p className="text-sm text-warning mt-2 flex items-center gap-1">
