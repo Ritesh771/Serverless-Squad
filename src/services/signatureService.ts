@@ -5,7 +5,7 @@ export interface Signature {
   id: string;
   booking: string;
   signed_by?: number;
-  status: 'pending' | 'signed' | 'expired' | 'disputed';
+  status: 'pending' | 'signed' | 'expired' | 'disputed' | 'rejected';
   signature_hash?: string;
   signature_data?: any;
   satisfaction_rating?: number;
@@ -13,6 +13,8 @@ export interface Signature {
   requested_at: string;
   signed_at?: string;
   expires_at: string;
+  docusign_envelope_id?: string;
+  docusign_signing_url?: string;
 }
 
 export const signatureService = {
@@ -39,5 +41,21 @@ export const signatureService = {
       comments: comments || '',
     });
     return data;
+  },
+
+  // Request signature from vendor
+  async requestSignature(bookingId: string): Promise<{ message: string; signature_id: string }> {
+    const { data } = await api.post(ENDPOINTS.ENHANCED_SIGNATURES, {
+      action: 'request_signature_with_photos',
+      booking_id: bookingId,
+    });
+    return data;
+  },
+
+  // Get DocuSign signing URL
+  async getDocuSignUrl(signatureId: string): Promise<{ signing_url: string }> {
+    // This would be implemented to get the DocuSign signing URL
+    // For now, we'll return a placeholder
+    throw new Error('DocuSign integration not fully implemented in frontend');
   },
 };

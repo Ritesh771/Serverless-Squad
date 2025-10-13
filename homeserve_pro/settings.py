@@ -217,6 +217,13 @@ STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='your_stripe_p
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='your_stripe_secret_key_here')
 STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='your_stripe_webhook_secret_here')
 
+# DocuSign Configuration
+DOCUSIGN_CLIENT_ID = config('DOCUSIGN_CLIENT_ID', default='')
+DOCUSIGN_CLIENT_SECRET = config('DOCUSIGN_CLIENT_SECRET', default='')
+DOCUSIGN_ACCOUNT_ID = config('DOCUSIGN_ACCOUNT_ID', default='')
+DOCUSIGN_BASE_PATH = config('DOCUSIGN_BASE_PATH', default='https://demo.docusign.net/restapi')
+DOCUSIGN_REDIRECT_URI = config('DOCUSIGN_REDIRECT_URI', default='http://localhost:3000/callback')
+
 # Email Configuration (SMTP for OTP)
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
 # SMTP Email Configuration

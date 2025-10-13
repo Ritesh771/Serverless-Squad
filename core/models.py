@@ -223,6 +223,7 @@ class Signature(models.Model):
         ('signed', 'Signed'),
         ('expired', 'Expired'),
         ('disputed', 'Disputed'),
+        ('rejected', 'Rejected'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -239,6 +240,10 @@ class Signature(models.Model):
     requested_at = models.DateTimeField(auto_now_add=True)
     signed_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField()  # 48 hours from request
+    
+    # DocuSign integration fields
+    docusign_envelope_id = models.CharField(max_length=100, blank=True, null=True)
+    docusign_signing_url = models.URLField(blank=True, null=True)
     
     def save(self, *args, **kwargs):
         if not self.expires_at:
