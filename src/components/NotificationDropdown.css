@@ -1,0 +1,36 @@
+.notification-dropdown-content {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid hsl(var(--border));
+}
+
+.notification-item {
+  transition: background-color 0.2s ease;
+}
+
+.notification-item:hover {
+  background-color: hsl(var(--accent));
+}
+
+.notification-unread {
+  background-color: hsl(var(--muted));
+}
+
+.notification-unread:hover {
+  background-color: hsl(var(--accent));
+}
+
+.notification-badge {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}

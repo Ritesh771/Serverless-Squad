@@ -130,12 +130,7 @@ export default function VendorDashboard() {
           icon={Clock}
           description="Awaiting completion"
         />
-        <DashboardCard
-          title="Completion Rate"
-          value={`${(dashboardData.stats.completion_rate * 100).toFixed(1)}%`}
-          icon={CheckCircle}
-          description="Last 30 days"
-        />
+       
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -222,13 +217,8 @@ export default function VendorDashboard() {
               </div>
 
               <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-muted-foreground">Completion Rate</span>
-                  <span className="font-medium">{(dashboardData.performance_metrics.completion_rate * 100).toFixed(1)}%</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2">
-                  <div className="bg-warning h-2 rounded-full" style={{ width: `${dashboardData.performance_metrics.completion_rate * 100}%` }} />
-                </div>
+                
+                
               </div>
 
               <div className="pt-4">

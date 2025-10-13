@@ -25,8 +25,8 @@ interface User {
 
 export default function AdminUsers() {
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const queryClient = useQueryClient();
 
   // Fetch users from backend
@@ -35,7 +35,7 @@ export default function AdminUsers() {
     queryFn: () => api.get(ENDPOINTS.USERS.LIST, {
       params: {
         search: search || undefined,
-        role: roleFilter || undefined,
+        role: roleFilter && roleFilter !== 'all' ? roleFilter : undefined,
         is_active: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
       }
     }).then(res => res.data),
@@ -61,8 +61,8 @@ export default function AdminUsers() {
   const updateUserStatusMutation = useMutation({
     mutationFn: ({ userId, isActive }: { userId: number; isActive: boolean }) =>
       api.patch(ENDPOINTS.USERS.UPDATE(userId), { is_active: isActive }),
-    onSuccess: () => {
-      toast.success(`User ${isActive ? 'activated' : 'deactivated'} successfully`);
+    onSuccess: (_, variables) => {
+      toast.success(`User ${variables.isActive ? 'activated' : 'deactivated'} successfully`);
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     },
     onError: () => {
@@ -153,7 +153,7 @@ export default function AdminUsers() {
             <SelectValue placeholder="All Roles" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Roles</SelectItem>
+            <SelectItem value="all">All Roles</SelectItem>
             <SelectItem value="customer">Customer</SelectItem>
             <SelectItem value="vendor">Vendor</SelectItem>
             <SelectItem value="onboard_manager">Onboard Manager</SelectItem>
@@ -167,7 +167,7 @@ export default function AdminUsers() {
             <SelectValue placeholder="All Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Status</SelectItem>
+            <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>

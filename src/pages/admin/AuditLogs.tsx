@@ -21,36 +21,43 @@ interface AuditLog {
   user_agent?: string;
 }
 
+interface AuditLogsResponse {
+  data: AuditLog[];
+  pagination: {
+    total_count: number;
+  };
+}
+
 export default function AdminAuditLogs() {
   const [search, setSearch] = useState('');
-  const [modelFilter, setModelFilter] = useState('');
-  const [actionFilter, setActionFilter] = useState('');
+  const [modelFilter, setModelFilter] = useState('all');
+  const [actionFilter, setActionFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize] = useState(20);
 
   // Fetch audit logs from backend
-  const { data: auditData, isLoading, error } = useQuery({
+  const { data: auditData, isLoading, error } = useQuery<AuditLogsResponse>({
     queryKey: ['audit-logs', { search, modelFilter, actionFilter, page, pageSize }],
     queryFn: () => adminService.getEditHistory({
-      model: modelFilter || undefined,
-      action: actionFilter || undefined,
+      model: modelFilter !== 'all' ? modelFilter : undefined,
+      action: actionFilter !== 'all' ? actionFilter : undefined,
       page,
       page_size: pageSize,
-    }),
+    }) as Promise<AuditLogsResponse>,
   });
 
-  const auditLogs = auditData?.results || [];
-  const totalPages = Math.ceil((auditData?.count || 0) / pageSize);
+  const auditLogs = auditData?.data || [];
+  const totalPages = Math.ceil((auditData?.pagination?.total_count || 0) / pageSize);
 
   const handleExport = async () => {
     try {
       const exportData = await adminService.exportEditHistory({
-        model: modelFilter || undefined,
-        action: actionFilter || undefined,
+        model: modelFilter !== 'all' ? modelFilter : undefined,
+        action: actionFilter !== 'all' ? actionFilter : undefined,
       });
       
       // Create and download CSV file
-      const blob = new Blob([exportData], { type: 'text/csv' });
+      const blob = new Blob([exportData as BlobPart], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -146,7 +153,7 @@ export default function AdminAuditLogs() {
             <SelectValue placeholder="All Models" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Models</SelectItem>
+            <SelectItem value="all">All Models</SelectItem>
             <SelectItem value="User">User</SelectItem>
             <SelectItem value="Booking">Booking</SelectItem>
             <SelectItem value="Payment">Payment</SelectItem>
@@ -161,7 +168,7 @@ export default function AdminAuditLogs() {
             <SelectValue placeholder="All Actions" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Actions</SelectItem>
+            <SelectItem value="all">All Actions</SelectItem>
             <SelectItem value="CREATE">Create</SelectItem>
             <SelectItem value="UPDATE">Update</SelectItem>
             <SelectItem value="DELETE">Delete</SelectItem>
