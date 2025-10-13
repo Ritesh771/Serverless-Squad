@@ -28,6 +28,7 @@ export interface RegisterRequest {
   username: string;
   email: string;
   password: string;
+  password_confirm: string;
   role: 'customer' | 'vendor';
   phone?: string;
   pincode?: string;
@@ -54,6 +55,29 @@ class AuthService {
   private static TOKEN_KEY = 'access_token';
   private static REFRESH_KEY = 'refresh_token';
   private static USER_KEY = 'user';
+
+  // Traditional password-based registration
+  async register(request: RegisterRequest): Promise<LoginResponse> {
+    try {
+      const response = await api.post<LoginResponse>(ENDPOINTS.AUTH.REGISTER, request);
+      
+      if (response.data.access) {
+        this.setTokens(response.data.access, response.data.refresh);
+        this.setUser(response.data.user);
+      }
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      throw new Error(
+        error.response?.data?.error ||
+        error.response?.data?.username?.[0] ||
+        error.response?.data?.email?.[0] ||
+        error.response?.data?.password?.[0] ||
+        'Registration failed. Please try again.'
+      );
+    }
+  }
 
   // Traditional login (for existing users with passwords)
   async login(credentials: LoginRequest): Promise<LoginResponse> {

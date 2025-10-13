@@ -4,27 +4,58 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
 from django.db import transaction
 from django.conf import settings
 from .models import User
 from .utils import OTPService, AuditLogger
 from .notification_service import NotificationService
+from .serializers import UserRegistrationSerializer
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Custom serializer to allow login with email or username"""
+    
+    def validate(self, attrs):
+        # Get the username from the request
+        username_or_email = attrs.get('username')
+        password = attrs.get('password')
+        
+        # Try to find user by email if the input looks like an email
+        if '@' in username_or_email:
+            try:
+                user = User.objects.get(email=username_or_email)
+                # Replace username with the actual username
+                attrs['username'] = user.username
+            except User.DoesNotExist:
+                pass  # Will fail in parent validation
+        
+        # Call parent validation
+        return super().validate(attrs)
+
+
 class CustomTokenObtainPairView(TokenObtainPairView):
-    """Custom JWT token view with role-based response"""
+    """Custom JWT token view with role-based response and email/username support"""
+    
+    serializer_class = CustomTokenObtainPairSerializer
     
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         
         if response.status_code == 200:
-            username = request.data.get('username')
+            username_or_email = request.data.get('username')
+            
             try:
-                user = User.objects.get(username=username)
+                # Find user by username or email
+                if '@' in username_or_email:
+                    user = User.objects.get(email=username_or_email)
+                else:
+                    user = User.objects.get(username=username_or_email)
+                
                 response.data['user'] = {
                     'id': user.id,
                     'username': user.username,
@@ -263,3 +294,45 @@ def verify_vendor_otp(request):
     except User.DoesNotExist:
         return Response({'error': 'Vendor user not found'}, 
                        status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register(request):
+    """Register a new user with password"""
+    serializer = UserRegistrationSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        try:
+            with transaction.atomic():
+                user = serializer.save()
+                user.is_verified = True  # Auto-verify for password-based registration
+                user.save()
+                
+                # Generate tokens
+                refresh = RefreshToken.for_user(user)
+                
+                # Log the registration
+                AuditLogger.log_action(
+                    user=user, action='create', resource_type='User',
+                    resource_id=user.id, request=request
+                )
+                
+                return Response({
+                    'message': 'User registered successfully',
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': user.id,
+                        'username': user.username,
+                        'email': user.email,
+                        'role': user.role,
+                        'is_verified': user.is_verified,
+                    }
+                }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            logger.error(f"Registration error: {str(e)}")
+            return Response({'error': f'Failed to register user: {str(e)}'}, 
+                           status=status.HTTP_400_BAD_REQUEST)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

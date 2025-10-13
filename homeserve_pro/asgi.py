@@ -21,13 +21,13 @@ django_asgi_app = get_asgi_application()
 
 from core.routing import websocket_urlpatterns
 
+# Simplified WebSocket configuration for development
+# TODO: Re-enable AllowedHostsOriginValidator for production
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
-    "websocket": AllowedHostsOriginValidator(
-        AuthMiddlewareStack(
-            URLRouter(
-                websocket_urlpatterns
-            )
+    "websocket": AuthMiddlewareStack(
+        URLRouter(
+            websocket_urlpatterns
         )
     ),
 })

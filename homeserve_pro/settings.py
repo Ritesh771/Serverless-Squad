@@ -30,10 +30,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
-    # Temporarily disabled: 'channels',
-    # Temporarily disabled: 'django_extensions', 
-    # Temporarily disabled: 'django_redis',
-    # Temporarily disabled: 'django_celery_beat',
+    'channels',  # WebSocket support
     
     # Local apps
     'core',
@@ -173,56 +170,47 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Cache Configuration
+# Cache Configuration (In-Memory)
 CACHES = {
     'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': config('REDIS_URL', default='redis://localhost:6379/1'),
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'homeserve-default-cache',
+        'TIMEOUT': 300,  # 5 minutes
         'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        },
-        'KEY_PREFIX': 'homeserve_cache',
-        'TIMEOUT': 60 * 15,  # 15 minutes default timeout
+            'MAX_ENTRIES': 1000,
+        }
     },
     'sessions': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': config('REDIS_URL', default='redis://localhost:6379/2'),
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        },
-        'KEY_PREFIX': 'homeserve_sessions',
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'homeserve-sessions-cache',
         'TIMEOUT': 60 * 60 * 24,  # 24 hours for sessions
+        'OPTIONS': {
+            'MAX_ENTRIES': 500,
+        }
     },
     'search_results': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': config('REDIS_URL', default='redis://localhost:6379/3'),
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        },
-        'KEY_PREFIX': 'homeserve_search',
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'homeserve-search-cache',
         'TIMEOUT': 60 * 30,  # 30 minutes for search results
+        'OPTIONS': {
+            'MAX_ENTRIES': 300,
+        }
     },
     'api_data': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': config('REDIS_URL', default='redis://localhost:6379/4'),
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        },
-        'KEY_PREFIX': 'homeserve_api',
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'homeserve-api-cache',
         'TIMEOUT': 60 * 10,  # 10 minutes for API data
+        'OPTIONS': {
+            'MAX_ENTRIES': 500,
+        }
     },
 }
 
-# Celery Configuration
-CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
-
-# Celery Beat Configuration
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+# Background Tasks Configuration
+# Note: Running tasks synchronously (no Celery/Redis required)
+# For production with many tasks, consider using Celery with RabbitMQ or database broker
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
 
 # Stripe Configuration
 STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='your_stripe_publishable_key_here')

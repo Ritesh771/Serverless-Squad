@@ -29,6 +29,8 @@ export default function BookService() {
   const [vendors, setVendors] = useState<VendorSearchResult[]>([]);
   const [dynamicPricing, setDynamicPricing] = useState<DynamicPricing | null>(null);
   const [demandIndex, setDemandIndex] = useState<number | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loading, setLoading] = useState(false);
   
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -46,9 +48,11 @@ export default function BookService() {
       toast.success('Service booked successfully!');
       queryClient.invalidateQueries({ queryKey: ['customer-bookings'] });
       navigate('/customer/my-bookings');
+      setLoading(false);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to book service');
+      setLoading(false);
     },
   });
 
@@ -133,6 +137,7 @@ export default function BookService() {
 
     const finalPrice = dynamicPricing?.pricing.final_price || parseFloat(service.base_price);
 
+    setLoading(true);
     createBookingMutation.mutate({
       service: parseInt(serviceType),
       pincode,
@@ -163,11 +168,21 @@ export default function BookService() {
                     <SelectValue placeholder="Select service" />
                   </SelectTrigger>
                   <SelectContent>
-                    {services.map((service) => (
-                      <SelectItem key={service.id} value={service.id}>
-                        {service.name} - ${service.base_price}/hr
+                    {servicesLoading ? (
+                      <SelectItem value="loading" disabled>
+                        Loading services...
                       </SelectItem>
-                    ))}
+                    ) : services && services.length > 0 ? (
+                      services.map((service) => (
+                        <SelectItem key={service.id} value={service.id.toString()}>
+                          {service.name} - ${service.base_price}/hr
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-services" disabled>
+                        No services available
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -314,71 +329,78 @@ export default function BookService() {
               />
             </div>
 
-            {serviceType && (
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex justify-between items-center mb-2">
+            {serviceType && dynamicPricing && (
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold">Dynamic Pricing</h3>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={calculatePrice}
-                    className="mb-2"
                     disabled={!pincode}
                   >
-                    Calculate Estimated Price
+                    Recalculate
                   </Button>
-                  {pricingSuggestions && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowSuggestions(!showSuggestions)}
-                    >
-                      {showSuggestions ? 'Hide' : 'Show'} Suggestions
-                    </Button>
-                  )}
                 </div>
                 
-                {estimatedPrice !== null && (
-                  <p className="text-2xl font-bold text-primary">
-                    Estimated: ${estimatedPrice.toFixed(2)}
-                  </p>
-                )}
-                
-                {showSuggestions && pricingSuggestions && (
-                  <div className="mt-3 p-3 bg-background border rounded-md">
-                    <h4 className="font-medium mb-2 flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4" />
-                      Pricing Suggestions
-                    </h4>
-                    
-                    {pricingSuggestions.recommendations.length > 0 ? (
-                      <div className="space-y-2">
-                        {pricingSuggestions.recommendations.map((rec, index) => (
-                          <div key={index} className="text-sm p-2 bg-muted rounded">
-                            {rec.message}
-                            {rec.savings > 0 && (
-                              <span className="ml-2 font-medium text-green-600">
-                                Save ₹{rec.savings.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No specific recommendations at this time.</p>
-                    )}
-                    
-                    <div className="mt-2 text-sm">
-                      <p>
-                        Cheapest date: {new Date(pricingSuggestions.cheapest_date).toLocaleDateString()} 
-                        <span className="ml-2 font-medium text-green-600">
-                          Save ₹{pricingSuggestions.savings.toFixed(2)}
-                        </span>
-                      </p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">Base Price</div>
+                    <div className="font-medium">₹{dynamicPricing.pricing.base_price}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Final Price</div>
+                    <div className="font-bold text-lg text-primary">₹{dynamicPricing.pricing.final_price}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Demand Multiplier</div>
+                    <div className="font-medium">{dynamicPricing.pricing.demand_multiplier}x</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Price Change</div>
+                    <div className={`font-medium ${dynamicPricing.pricing.price_change_percent > 0 ? 'text-destructive' : 'text-green-600'}`}>
+                      {dynamicPricing.pricing.price_change_percent > 0 ? '+' : ''}{dynamicPricing.pricing.price_change_percent.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+
+                {dynamicPricing.pricing.factors && dynamicPricing.pricing.factors.length > 0 && (
+                  <div className="mt-3 pt-3 border-t">
+                    <div className="text-sm font-medium mb-2">Pricing Factors:</div>
+                    <div className="space-y-1">
+                      {dynamicPricing.pricing.factors.map((factor: any, index: number) => (
+                        <div key={index} className="text-sm text-muted-foreground flex items-center gap-2">
+                          {factor.impact > 0 ? (
+                            <TrendingUp className="h-3 w-3 text-destructive" />
+                          ) : (
+                            <AlertTriangle className="h-3 w-3 text-green-600" />
+                          )}
+                          <span>{factor.reason}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {serviceType && !dynamicPricing && (
+              <div className="p-4 bg-muted rounded-lg">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={calculatePrice}
+                  disabled={!pincode}
+                  className="w-full"
+                >
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Calculate Dynamic Price
+                </Button>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Get real-time pricing based on demand and availability
+                </p>
               </div>
             )}
 

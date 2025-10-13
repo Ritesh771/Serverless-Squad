@@ -9,6 +9,7 @@ export type { User };
 interface AuthContextType {
   user: User | null;
   login: (username: string, password: string) => Promise<void>;
+  register: (userData: RegisterData) => Promise<void>;
   registerWithOTP: (identifier: string, userData: RegisterData, method?: 'sms' | 'email') => Promise<void>;
   logout: () => void;
   isLoading: boolean;
@@ -20,8 +21,10 @@ interface AuthContextType {
 
 interface RegisterData {
   username: string;
-  email?: string;
-  role: UserRole;
+  email: string;
+  password: string;
+  password_confirm: string;
+  role: 'customer' | 'vendor';
   first_name?: string;
   last_name?: string;
   phone?: string;
@@ -58,6 +61,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       navigate(authService.getRoleBasedPath(response.user.role));
     } catch (error) {
       console.error('Login error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Password-based registration
+  const register = async (userData: RegisterData) => {
+    setIsLoading(true);
+
+    try {
+      const response = await authService.register(userData);
+      setUser(response.user);
+      navigate(authService.getRoleBasedPath(response.user.role));
+    } catch (error) {
+      console.error('Registration error:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -151,6 +170,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       value={{
         user,
         login,
+        register,
         registerWithOTP,
         logout,
         isLoading,

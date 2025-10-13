@@ -1,5 +1,6 @@
-"""
-Celery configuration for HomeServe Pro
+""" Celery configuration for HomeServe Pro
+Note: Tasks run synchronously in development (no Redis/broker needed)
+For production, consider using RabbitMQ or database broker
 """
 
 import os
@@ -18,36 +19,15 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
 
-# Optional configuration, see the application user guide.
+# Configuration for synchronous task execution (no broker)
 app.conf.update(
-    task_track_started=True,
+    task_always_eager=True,  # Execute tasks synchronously
+    task_eager_propagates=True,  # Propagate exceptions
     task_serializer='json',
     result_serializer='json',
     accept_content=['json'],
-    result_backend='redis://localhost:6379/0',
     timezone='UTC',
     enable_utc=True,
-    
-    # Task routing
-    task_routes={
-        'core.tasks.generate_pincode_analytics': {'queue': 'analytics'},
-        'core.tasks.send_pincode_demand_alerts': {'queue': 'notifications'},
-        'core.tasks.send_vendor_bonus_alerts': {'queue': 'notifications'},
-        'core.tasks.send_promotional_campaigns': {'queue': 'notifications'},
-        'core.tasks.check_pending_signatures': {'queue': 'monitoring'},
-        'core.tasks.check_payment_holds': {'queue': 'monitoring'},
-        'core.tasks.check_booking_timeouts': {'queue': 'monitoring'},
-        'core.tasks.send_vendor_completion_reminders': {'queue': 'notifications'},
-        'core.tasks.cleanup_old_notifications': {'queue': 'maintenance'},
-    },
-    
-    # Worker configuration
-    worker_prefetch_multiplier=1,
-    task_acks_late=True,
-    worker_disable_rate_limits=False,
-    
-    # Beat configuration
-    beat_scheduler='django_celery_beat.schedulers:DatabaseScheduler',
 )
 
 
