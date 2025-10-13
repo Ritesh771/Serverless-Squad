@@ -29,11 +29,11 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
-    'channels',
-    'django_extensions',
     'django_filters',
-    'django_redis',
-    'django_celery_beat',
+    # Temporarily disabled: 'channels',
+    # Temporarily disabled: 'django_extensions', 
+    # Temporarily disabled: 'django_redis',
+    # Temporarily disabled: 'django_celery_beat',
     
     # Local apps
     'core',
@@ -287,3 +287,26 @@ LOGGING = {
         },
     },
 }
+
+# Temporary settings override for testing without Redis
+import os
+
+if os.environ.get('NO_REDIS', 'false').lower() == 'true':
+    print("⚠️  Running with in-memory cache (Redis disabled)")
+    
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'homeserve-cache',
+            'TIMEOUT': 300,  # 5 minutes
+            'OPTIONS': {
+                'MAX_ENTRIES': 1000,
+            }
+        }
+    }
+    
+    # Disable Celery for testing (run tasks synchronously)
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+    
+    print("✅ Temporary cache settings applied")

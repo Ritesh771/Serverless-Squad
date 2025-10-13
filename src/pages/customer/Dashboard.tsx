@@ -6,49 +6,68 @@ import { Calendar, Clock, CheckCircle, AlertCircle, FileSignature, Check } from 
 import { Link } from 'react-router-dom';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { toast } from 'sonner';
-
-interface Booking {
-  id: string;
-  service: string;
-  date: string;
-  status: string;
-  vendor: string;
-}
+import { useQuery } from '@tanstack/react-query';
+import { bookingService, Booking } from '@/services/bookingService';
+import { signatureService } from '@/services/signatureService';
+import { Loader } from '@/components/Loader';
 
 export default function CustomerDashboard() {
-  const [recentBookings, setRecentBookings] = useState<Booking[]>([
-    { id: '1', service: 'Plumbing Repair', date: '2025-01-15', status: 'completed', vendor: 'John Smith' },
-    { id: '2', service: 'AC Maintenance', date: '2025-01-10', status: 'signed', vendor: 'Sarah Johnson' },
-    { id: '3', service: 'Electrical Inspection', date: '2025-01-08', status: 'pending', vendor: 'Mike Davis' },
-  ]);
+  // Fetch real booking data
+  const { data: bookings, isLoading, error } = useQuery({
+    queryKey: ['customer-bookings'],
+    queryFn: bookingService.getBookings,
+  });
+
+  // Fetch pending signatures
+  const { data: signatures } = useQuery({
+    queryKey: ['customer-signatures'],
+    queryFn: signatureService.getSignatures,
+  });
+
+  // Calculate dashboard statistics from real data
+  const stats = {
+    activeBookings: bookings?.filter(b => ['confirmed', 'in_progress'].includes(b.status)).length || 0,
+    pendingBookings: bookings?.filter(b => b.status === 'pending').length || 0,
+    completedBookings: bookings?.filter(b => ['completed', 'signed'].includes(b.status)).length || 0,
+    totalSpent: bookings?.reduce((sum, b) => sum + parseFloat(b.total_price || '0'), 0) || 0,
+  };
+
+  const pendingSignatures = signatures?.filter(s => s.status === 'pending') || [];
+  const recentBookings = bookings?.slice(0, 5) || [];
 
   // WebSocket connection for real-time updates
   const { isConnected } = useWebSocket((data) => {
     if (data.type === 'booking_status_update') {
-      // Update booking status in real-time
-      setRecentBookings(prev => prev.map(booking => 
-        booking.id === data.booking_id 
-          ? { ...booking, status: data.status as string } 
-          : booking
-      ));
-      
-      // Show notification
+      // Refresh bookings when status changes
       toast.success(`Booking status updated to ${data.status}`, {
         description: `Service: ${data.service_name || 'Unknown service'}`
       });
     } else if (data.type === 'signature_completed') {
-      // Update booking status when signature is completed
-      setRecentBookings(prev => prev.map(booking => 
-        booking.id === data.booking_id 
-          ? { ...booking, status: 'signed' } 
-          : booking
-      ));
-      
       toast.success('Signature completed successfully!', {
         description: 'Payment will be processed shortly'
       });
     }
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="text-center">
+          <AlertCircle className="mx-auto h-12 w-12 text-destructive" />
+          <h3 className="mt-2 text-lg font-semibold">Error Loading Dashboard</h3>
+          <p className="text-muted-foreground">Please try refreshing the page</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -67,25 +86,25 @@ export default function CustomerDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardCard
           title="Active Bookings"
-          value="3"
+          value={stats.activeBookings.toString()}
           icon={Calendar}
           description="Services in progress"
         />
         <DashboardCard
           title="Pending"
-          value="1"
+          value={stats.pendingBookings.toString()}
           icon={Clock}
           description="Awaiting vendor assignment"
         />
         <DashboardCard
           title="Completed"
-          value="8"
+          value={stats.completedBookings.toString()}
           icon={CheckCircle}
           description="Last 30 days"
         />
         <DashboardCard
           title="Total Spent"
-          value="$1,240"
+          value={`₹${stats.totalSpent.toFixed(2)}`}
           icon={AlertCircle}
           description="This month"
         />
@@ -165,24 +184,25 @@ export default function CustomerDashboard() {
             <div className="pt-2">
               <h3 className="text-sm font-medium mb-2">Pending Signatures</h3>
               <div className="space-y-2">
-                {recentBookings
-                  .filter(booking => booking.status === 'completed')
-                  .map(booking => (
+                {pendingSignatures.map(signature => {
+                  const booking = bookings?.find(b => b.id === signature.booking);
+                  return (
                     <Link 
-                      key={booking.id} 
-                      to={`/customer/signature/${booking.id}`}
+                      key={signature.id} 
+                      to={`/customer/signature/${signature.id}`}
                       className="flex items-center justify-between p-2 border border-border rounded hover:bg-muted"
                     >
                       <div className="flex items-center gap-2">
                         <FileSignature className="h-4 w-4 text-primary" />
-                        <span className="text-sm">{booking.service}</span>
+                        <span className="text-sm">{booking?.service_name || 'Service'}</span>
                       </div>
                       <Button size="sm" variant="outline">
                         Sign Now
                       </Button>
                     </Link>
-                  ))}
-                {recentBookings.filter(booking => booking.status === 'completed').length === 0 && (
+                  );
+                })}
+                {pendingSignatures.length === 0 && (
                   <p className="text-xs text-muted-foreground py-2">No pending signatures</p>
                 )}
               </div>

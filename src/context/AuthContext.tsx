@@ -1,22 +1,31 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { authService, type User } from '@/services/authService';
 
-export type UserRole = 'customer' | 'vendor' | 'onboard' | 'ops' | 'admin';
+export type UserRole = 'customer' | 'vendor' | 'onboard_manager' | 'ops_manager' | 'super_admin';
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  avatar?: string;
-}
+export type { User };
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, role: UserRole) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  registerWithOTP: (identifier: string, userData: RegisterData, method?: 'sms' | 'email') => Promise<void>;
   logout: () => void;
   isLoading: boolean;
+  sendOTP: (identifier: string, method?: 'sms' | 'email', createUser?: boolean, username?: string) => Promise<void>;
+  verifyOTP: (identifier: string, otp: string, method?: 'sms' | 'email') => Promise<void>;
+  sendVendorOTP: (identifier: string, method?: 'sms' | 'email') => Promise<void>;
+  verifyVendorOTP: (identifier: string, otp: string, method?: 'sms' | 'email') => Promise<void>;
+}
+
+interface RegisterData {
+  username: string;
+  email?: string;
+  role: UserRole;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  pincode?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,77 +36,130 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check for stored user on mount
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    // Check for stored user and token on mount
+    const currentUser = authService.getCurrentUser();
+    const isAuthenticated = authService.isAuthenticated();
+
+    if (currentUser && isAuthenticated) {
+      setUser(currentUser);
+    } else {
+      // Clear invalid data
+      authService.logout();
     }
     setIsLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
-    // TODO: Connect to backend API /api/auth/login
+  const login = async (username: string, password: string) => {
     setIsLoading(true);
-    
-    // Mock login - replace with actual API call
-    const mockUser: User = {
-      id: '1',
-      email,
-      name: 'Demo User',
-      role: email.includes('vendor') ? 'vendor' : 
-            email.includes('admin') ? 'admin' :
-            email.includes('ops') ? 'ops' :
-            email.includes('onboard') ? 'onboard' : 'customer'
-    };
 
-    localStorage.setItem('user', JSON.stringify(mockUser));
-    setUser(mockUser);
-    setIsLoading(false);
-
-    // Redirect based on role
-    const redirectMap: Record<UserRole, string> = {
-      customer: '/customer/dashboard',
-      vendor: '/vendor/dashboard',
-      onboard: '/onboard/dashboard',
-      ops: '/ops/dashboard',
-      admin: '/admin/dashboard'
-    };
-    navigate(redirectMap[mockUser.role]);
+    try {
+      const response = await authService.login({ username, password });
+      setUser(response.user);
+      navigate(authService.getRoleBasedPath(response.user.role));
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const register = async (email: string, password: string, name: string, role: UserRole) => {
-    // TODO: Connect to backend API /api/auth/register
+  // OTP-based registration for new users
+  const registerWithOTP = async (identifier: string, userData: RegisterData, method: 'sms' | 'email' = 'email') => {
     setIsLoading(true);
 
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      name,
-      role
-    };
+    try {
+      // First, send OTP with user creation enabled
+      await authService.sendOTP({
+        email: method === 'email' ? identifier : undefined,
+        phone: method === 'sms' ? identifier : undefined,
+        method,
+        create_user: true,
+        username: userData.username
+      });
+      
+      // The user will need to verify OTP in the next step
+      // This method just sends the OTP
+    } catch (error) {
+      console.error('Registration error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    localStorage.setItem('user', JSON.stringify(newUser));
-    setUser(newUser);
-    setIsLoading(false);
+  const sendOTP = async (identifier: string, method: 'sms' | 'email' = 'email', createUser = false, username?: string) => {
+    try {
+      await authService.sendOTP({
+        email: method === 'email' ? identifier : undefined,
+        phone: method === 'sms' ? identifier : undefined,
+        method,
+        create_user: createUser,
+        username
+      });
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      throw error;
+    }
+  };
 
-    const redirectMap: Record<UserRole, string> = {
-      customer: '/customer/dashboard',
-      vendor: '/vendor/dashboard',
-      onboard: '/onboard/dashboard',
-      ops: '/ops/dashboard',
-      admin: '/admin/dashboard'
-    };
-    navigate(redirectMap[role]);
+  const verifyOTP = async (identifier: string, otp: string, method: 'sms' | 'email' = 'email') => {
+    try {
+      const response = await authService.verifyOTP({
+        email: method === 'email' ? identifier : undefined,
+        phone: method === 'sms' ? identifier : undefined,
+        otp
+      });
+      
+      setUser(response.user);
+      navigate(authService.getRoleBasedPath(response.user.role));
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      throw error;
+    }
+  };
+
+  // Vendor-specific OTP methods
+  const sendVendorOTP = async (identifier: string, method: 'sms' | 'email' = 'email') => {
+    try {
+      await authService.sendVendorOTP(identifier, method);
+    } catch (error) {
+      console.error('Send vendor OTP error:', error);
+      throw error;
+    }
+  };
+
+  const verifyVendorOTP = async (identifier: string, otp: string, method: 'sms' | 'email' = 'email') => {
+    try {
+      const response = await authService.verifyVendorOTP(identifier, otp, method);
+      setUser(response.user);
+      navigate(authService.getRoleBasedPath(response.user.role));
+    } catch (error) {
+      console.error('Verify vendor OTP error:', error);
+      throw error;
+    }
   };
 
   const logout = () => {
-    localStorage.removeItem('user');
+    authService.logout();
     setUser(null);
     navigate('/auth/login');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, isLoading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        registerWithOTP,
+        logout,
+        isLoading,
+        sendOTP,
+        verifyOTP,
+        sendVendorOTP,
+        verifyVendorOTP,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

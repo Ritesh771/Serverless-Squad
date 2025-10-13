@@ -2,9 +2,30 @@ import { Bell, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
+import type { User } from '@/services/authService';
 
 export const Navbar = () => {
   const { user } = useAuth();
+
+  // Helper function to get display name safely
+  const getDisplayName = (user: User) => {
+    if (user.first_name && user.last_name) {
+      return `${user.first_name} ${user.last_name}`;
+    }
+    if (user.first_name) {
+      return user.first_name;
+    }
+    if (user.username) {
+      return user.username;
+    }
+    return user.email || 'User';
+  };
+
+  // Helper function to get avatar initial safely
+  const getAvatarInitial = (user: User) => {
+    const displayName = getDisplayName(user);
+    return displayName.charAt(0).toUpperCase();
+  };
 
   return (
     <header className="h-24 bg-card border-b border-border px-4 md:px-6 flex items-center justify-between">
@@ -33,9 +54,9 @@ export const Navbar = () => {
 
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold">
-            {user?.name.charAt(0).toUpperCase()}
+            {user ? getAvatarInitial(user) : 'U'}
           </div>
-          <span className="hidden sm:block text-sm font-medium">{user?.name}</span>
+          <span className="hidden sm:block text-sm font-medium">{user ? getDisplayName(user) : 'User'}</span>
         </div>
       </div>
     </header>

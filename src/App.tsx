@@ -91,8 +91,8 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Public routes */}
-      <Route path="/auth/login" element={user ? <Navigate to={`/${user.role}/dashboard`} /> : <Login />} />
-      <Route path="/auth/register" element={user ? <Navigate to={`/${user.role}/dashboard`} /> : <Register />} />
+      <Route path="/auth/login" element={user ? <Navigate to={`/${user.role.replace('_', '-')}/dashboard`} /> : <Login />} />
+      <Route path="/auth/register" element={user ? <Navigate to={`/${user.role.replace('_', '-')}/dashboard`} /> : <Register />} />
       <Route path="/auth/forgot-password" element={<ForgotPassword />} />
 
       {/* Customer routes */}
@@ -112,27 +112,33 @@ function AppRoutes() {
       <Route path="/vendor/earnings/:id" element={<ProtectedLayout><VendorTransactionDetails /></ProtectedLayout>} />
       <Route path="/vendor/profile" element={<ProtectedLayout><VendorProfile /></ProtectedLayout>} />
 
-      {/* Onboard routes */}
-      <Route path="/onboard/dashboard" element={<ProtectedLayout><OnboardDashboard /></ProtectedLayout>} />
-      <Route path="/onboard/vendor-queue" element={<ProtectedLayout><VendorQueue /></ProtectedLayout>} />
-      <Route path="/onboard/vendor-queue/:id" element={<ProtectedLayout><VendorDetails /></ProtectedLayout>} />
-      <Route path="/onboard/approved-vendors" element={<ProtectedLayout><ApprovedVendors /></ProtectedLayout>} />
+      {/* Onboard Manager routes (backend uses onboard_manager) */}
+      <Route path="/onboard-manager/dashboard" element={<ProtectedLayout><OnboardDashboard /></ProtectedLayout>} />
+      <Route path="/onboard-manager/vendor-queue" element={<ProtectedLayout><VendorQueue /></ProtectedLayout>} />
+      <Route path="/onboard-manager/vendor-queue/:id" element={<ProtectedLayout><VendorDetails /></ProtectedLayout>} />
+      <Route path="/onboard-manager/approved-vendors" element={<ProtectedLayout><ApprovedVendors /></ProtectedLayout>} />
+      {/* Legacy onboard routes - redirect to onboard-manager */}
+      <Route path="/onboard/*" element={<Navigate to="/onboard-manager/dashboard" replace />} />
 
-      {/* Ops routes */}
-      <Route path="/ops/dashboard" element={<ProtectedLayout><OpsDashboard /></ProtectedLayout>} />
-      <Route path="/ops/bookings-monitor" element={<ProtectedLayout><BookingsMonitor /></ProtectedLayout>} />
-      <Route path="/ops/signature-vault" element={<ProtectedLayout><SignatureVault /></ProtectedLayout>} />
-      <Route path="/ops/manual-payments" element={<ProtectedLayout><ManualPayments /></ProtectedLayout>} />
-      <Route path="/ops/analytics" element={<ProtectedLayout><OpsAnalytics /></ProtectedLayout>} />
+      {/* Ops Manager routes (backend uses ops_manager) */}
+      <Route path="/ops-manager/dashboard" element={<ProtectedLayout><OpsDashboard /></ProtectedLayout>} />
+      <Route path="/ops-manager/bookings-monitor" element={<ProtectedLayout><BookingsMonitor /></ProtectedLayout>} />
+      <Route path="/ops-manager/signature-vault" element={<ProtectedLayout><SignatureVault /></ProtectedLayout>} />
+      <Route path="/ops-manager/manual-payments" element={<ProtectedLayout><ManualPayments /></ProtectedLayout>} />
+      <Route path="/ops-manager/analytics" element={<ProtectedLayout><OpsAnalytics /></ProtectedLayout>} />
+      {/* Legacy ops routes - redirect to ops-manager */}
+      <Route path="/ops/*" element={<Navigate to="/ops-manager/dashboard" replace />} />
 
-      {/* Admin routes */}
-      <Route path="/admin/dashboard" element={<ProtectedLayout><AdminDashboard /></ProtectedLayout>} />
-      <Route path="/admin/users" element={<ProtectedLayout><AdminUsers /></ProtectedLayout>} />
-      <Route path="/admin/roles" element={<ProtectedLayout><AdminRoles /></ProtectedLayout>} />
-      <Route path="/admin/audit-logs" element={<ProtectedLayout><AdminAuditLogs /></ProtectedLayout>} />
-      <Route path="/admin/ethics" element={<ProtectedLayout><AdminEthics /></ProtectedLayout>} />
-      <Route path="/admin/reports" element={<ProtectedLayout><AdminReports /></ProtectedLayout>} />
-      <Route path="/admin/settings" element={<ProtectedLayout><AdminSettings /></ProtectedLayout>} />
+      {/* Super Admin routes (backend uses super_admin) */}
+      <Route path="/super-admin/dashboard" element={<ProtectedLayout><AdminDashboard /></ProtectedLayout>} />
+      <Route path="/super-admin/users" element={<ProtectedLayout><AdminUsers /></ProtectedLayout>} />
+      <Route path="/super-admin/roles" element={<ProtectedLayout><AdminRoles /></ProtectedLayout>} />
+      <Route path="/super-admin/audit-logs" element={<ProtectedLayout><AdminAuditLogs /></ProtectedLayout>} />
+      <Route path="/super-admin/ethics" element={<ProtectedLayout><AdminEthics /></ProtectedLayout>} />
+      <Route path="/super-admin/reports" element={<ProtectedLayout><AdminReports /></ProtectedLayout>} />
+      <Route path="/super-admin/settings" element={<ProtectedLayout><AdminSettings /></ProtectedLayout>} />
+      {/* Legacy admin routes - redirect to super-admin */}
+      <Route path="/admin/*" element={<Navigate to="/super-admin/dashboard" replace />} />
 
       {/* Default redirects */}
       <Route path="/" element={<Navigate to="/auth/login" />} />
