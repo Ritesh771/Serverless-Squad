@@ -172,8 +172,9 @@ The repository includes additional integration and system-level scripts under th
 
 This project was developed by Serverless Squad.
 
-- **Team Lead**: Ritesh N - [Portfolio](https://riteshn.me/)
-- **Team Members**: Pannaga J A, Ruthu Parinika V N, Shashank G S
+- **Developer and Team Lead**: Ritesh N - [Portfolio](https://riteshn.me/)
+- **Developer**: Pannaga J A - [Portfolio](https://pannagaja.vercel.app/)
+- **Team Members**: Ruthu Parinika V N, Shashank G S
 - **Email**: riturithesh66@gmail.com
 - **GitHub Repository**: [https://github.com/Ritesh771/Serverless-Squad](https://github.com/Ritesh771/Serverless-Squad)
 
